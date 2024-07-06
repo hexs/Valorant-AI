@@ -1,3 +1,4 @@
+import os
 import time
 from datetime import datetime
 
@@ -40,6 +41,7 @@ def control(data):
 def predict(data):
     from ultralytics import YOLO
     import mss
+    from math import atan
 
     model = YOLO(r'train_yolov8_with_gpu/runs/detect/train2/weights/best.pt')
     # cap = cv2.VideoCapture(r'D:\Python_Projects\valo-ai\videos\VALORANT   2024-07-04 05-27-48.mp4')
@@ -48,13 +50,13 @@ def predict(data):
     t2 = datetime.now()
     time = 0.05
     while data['play']:
-        t2 = datetime.now()
-        delta_t = (t2 - t1).total_seconds()
-        if delta_t > time:
+        # t2 = datetime.now()
+        # delta_t = (t2 - t1).total_seconds()
+        if True:
             t1 = t2
             print()
             print()
-            print(delta_t)
+            # print(delta_t)
             with mss.mss() as sct:
                 screenshot = sct.grab(sct.monitors[0])
             image = np.array(screenshot)
@@ -80,29 +82,42 @@ def predict(data):
                 x, y, w, h = xywh
                 x1, y1, x2, y2 = [int(x) for x in xyxy]
 
-                annotated_frame = cv2.rectangle(image, (x1, y1), (x2, y2), (0, 0, 255), 4)
-
                 distance = (abs(x - center[0]), abs(y - center[1]))
+
                 ###########################################################
-                # y = mx
+                ### y = mx
+                # m = 13 / 20
+                # m = 10 / 20
+                # vx = int(m * distance[0])
+                # vy = int(m * distance[1])
+                ###########################################################
+                ### y = mx - ax^2
                 # m = 8 / 20
                 # a = 0.001
                 # vx = int(m * distance[0] - a * distance[0] ** 2)
                 # vy = int(m * distance[1] - a * distance[0] ** 2)
-
                 ##########################################################
-                # y = ax^p + bx
-                a = 1.11  # 0-2
-                p = 0.68  # 0-2
-                b = 0  # 0-1
-                vx = int((a * distance[0]) ** p + b * distance[0])
-                vy = int((a * distance[1]) ** p + b * distance[1])
+                ### y = ax^p + bx
+                # a = 1.11  # 0-2
+                # p = 0.68  # 0-2
+                # b = 0  # 0-1
+                # vx = int((a * distance[0]) ** p + b * distance[0])
+                # vy = int((a * distance[1]) ** p + b * distance[1])
+                #########################################################
+                ### y = b arctan(ax)
+                a = 0.001306
+                b = 455
+                vx = int(b * atan(a * distance[0]))
+                vy = int(b * atan(a * distance[1]))
+                #########################################################
 
-                ###################################################
                 print('v', vx, vy)
 
                 w_h = w * 0.4 / 2
-                h_h = h / 2
+                h_h = h / 2.8
+                # h_h = (h - h * 0.1) / 2
+                y -= h / 4
+
                 s = ''
                 if center[0] < x - w_h:
                     s += 'd' * vx
@@ -117,7 +132,13 @@ def predict(data):
                 print('s', s)
                 s = s.replace('w' * 10, 'W').replace('a' * 10, 'A').replace('s' * 10, 'S').replace('d' * 10, 'D')
                 data['control'] = s
+
+                annotated_frame = cv2.rectangle(image, (x1, y1), (x2, y2), (0, 0, 255), 2)
+                annotated_frame = cv2.rectangle(image, (int(x - w_h / 2), int(y - h_h / 2)),
+                                                (int(x + w_h / 2), int(y + h_h / 2)), (0, 255, 0), 1)
                 cv2.putText(annotated_frame, f'{s}', (100, 100), 1, 4, (255, 0, 0), 4)
+                os.makedirs('img_out', exist_ok=True)
+                cv2.imwrite(datetime.now().strftime('img_out/%H%M%S.png'), annotated_frame)
 
             else:
                 annotated_frame = image
