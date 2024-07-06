@@ -10,30 +10,21 @@ import serial
 
 def control(data):
     '''
-        if (x == 'w') Mouse.move(0, -10);
-        if (x == 'a') Mouse.move(-10, 0);
-        if (x == 's') Mouse.move(0, 10);
-        if (x == 'd') Mouse.move(10, 0);
+        <+xxx-yyy>
+        Mouse.move(x, y);
 
-        if (x == 'W') Mouse.move(0, -100);
-        if (x == 'A') Mouse.move(-100, 0);
-        if (x == 'S') Mouse.move(0, 100);
-        if (x == 'D') Mouse.move(100, 0);
-
-
-        if (x == 'c') Mouse.click();
-        if (x == 'p') Mouse.press();
-        if (x == 'r') Mouse.release();
+        if <c>
+        Mouse.click();
     '''
     port = 'COM3'
     baud_rate = 9600
     ser = serial.Serial(port, baud_rate)
     while data['play']:
         s = data['control']
-        data['control'] = []
         if s:
             print(s, '--------------------------------------------------------------')
             ser.write(s.encode())
+        data['control'] = ''
 
     ser.close()
 
@@ -43,17 +34,23 @@ def predict(data):
     import mss
     from math import atan
 
-    model = YOLO(r'train_yolov8_with_gpu/runs/detect/train2/weights/best.pt')
+    model = YOLO(r'train_yolov8_with_gpu/runs/detect/train3/weights/best.pt')
     # cap = cv2.VideoCapture(r'D:\Python_Projects\valo-ai\videos\VALORANT   2024-07-04 05-27-48.mp4')
     center = np.array([1920, 1080]) / 2
     t1 = datetime.now()
     t2 = datetime.now()
     time = 0.05
+    x, y, w, h = 0.5, 0.5, 0.7, 0.6
+    x1_ = int((x - w / 2) * 1920)
+    y1_ = int((y - h / 2) * 1080)
+    x2_ = int((x + w / 2) * 1920)
+    y2_ = int((y + h / 2) * 1080)
+
     while data['play']:
         # t2 = datetime.now()
         # delta_t = (t2 - t1).total_seconds()
         if True:
-            t1 = t2
+            # t1 = t2
             print()
             print()
             # print(delta_t)
@@ -63,6 +60,7 @@ def predict(data):
             image = cv2.cvtColor(image, cv2.COLOR_BGRA2BGR)
             # image = cap.read()[1]
             results = model(image)
+            cv2.rectangle(image, (0, 0), (600, 200), (255, 255, 255), -1)
 
             boxes = results[0].boxes
             print(boxes.xywh)  # tensor([[1225.1987,  542.2114,   28.5000,   23.3500]], device='cuda:0')
@@ -82,7 +80,7 @@ def predict(data):
                 x, y, w, h = xywh
                 x1, y1, x2, y2 = [int(x) for x in xyxy]
 
-                distance = (abs(x - center[0]), abs(y - center[1]))
+                distance = (x - center[0], y - center[1])
 
                 ###########################################################
                 ### y = mx
@@ -107,8 +105,8 @@ def predict(data):
                 ### y = b arctan(ax)
                 a = 0.001306
                 b = 455
-                vx = int(b * atan(a * distance[0]))
-                vy = int(b * atan(a * distance[1]))
+                vx = int(b * atan(a * distance[0])) * 3
+                vy = int(b * atan(a * distance[1])) * 3
                 #########################################################
 
                 print('v', vx, vy)
@@ -119,32 +117,23 @@ def predict(data):
                 y -= h / 4
 
                 s = ''
-                if center[0] < x - w_h:
-                    s += 'd' * vx
-                if center[0] > x + w_h:
-                    s += 'a' * vx
-                if center[1] < y - h_h:
-                    s += 's' * vy
-                if center[1] > y + h_h:
-                    s += 'w' * vy
                 if x - w_h <= center[0] <= x + w_h and y - h_h <= center[1] <= y + h_h:
-                    s += 'c'
-                print('s', s)
-                s = s.replace('w' * 10, 'W').replace('a' * 10, 'A').replace('s' * 10, 'S').replace('d' * 10, 'D')
+                    s += '<c>'
+                else:
+                    s += f'<{"+" if vx >= 0 else "-"}{abs(vx):03}{"+" if vy >= 0 else "-"}{abs(vy):03}>'
+
                 data['control'] = s
 
-                annotated_frame = cv2.rectangle(image, (x1, y1), (x2, y2), (0, 0, 255), 2)
-                annotated_frame = cv2.rectangle(image, (int(x - w_h / 2), int(y - h_h / 2)),
-                                                (int(x + w_h / 2), int(y + h_h / 2)), (0, 255, 0), 1)
-                cv2.putText(annotated_frame, f'{s}', (100, 100), 1, 4, (255, 0, 0), 4)
+                cv2.rectangle(image, (x1, y1), (x2, y2), (0, 0, 255), 2)
+                cv2.rectangle(image, (int(x - w_h / 2), int(y - h_h / 2)),
+                              (int(x + w_h / 2), int(y + h_h / 2)), (0, 255, 0), 1)
+
+                cv2.putText(image, f'{s}', (100, 100), 1, 4, (255, 0, 0), 4)
                 os.makedirs('img_out', exist_ok=True)
-                cv2.imwrite(datetime.now().strftime('img_out/%H%M%S.png'), annotated_frame)
+                cv2.imwrite(datetime.now().strftime('img_out/%H%M%S.png'), image)
 
-            else:
-                annotated_frame = image
-
-            cv2.imshow('img', cv2.resize(annotated_frame, (0, 0), fx=.25, fy=.25))
-            # cv2.imshow('img', cv2.resize(annotated_frame, (0, 0), fx=.75, fy=.75))
+            cv2.imshow('img', cv2.resize(image, (0, 0), fx=.25, fy=.25))
+            # cv2.imshow('img', image)
             key = cv2.waitKey(1)
             if key == ord('q'):
                 data['play'] = False
