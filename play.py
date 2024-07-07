@@ -1,14 +1,14 @@
 import os
 import time
-from datetime import datetime
-
+from datetime import datetime, timedelta
+import keyboard
 import cv2
 import numpy as np
 import multiprocessing
 import serial
 
 
-def control(data):
+def setup():
     '''
         <+xxx-yyy>
         Mouse.move(x, y);
@@ -19,121 +19,139 @@ def control(data):
     port = 'COM3'
     baud_rate = 9600
     ser = serial.Serial(port, baud_rate)
-    while data['play']:
-        s = data['control']
-        if s:
-            print(s, '--------------------------------------------------------------')
-            ser.write(s.encode())
-        data['control'] = ''
+    return ser
 
-    ser.close()
+
+def loop(ser, s):
+    if s:
+        print(f'--- {s} ---')
+        ser.write(s.encode())
 
 
 def predict(data):
     from ultralytics import YOLO
     import mss
-    from math import atan
+    ser = setup()
+    last_ser_time = datetime.now()
 
-    model = YOLO(r'train_yolov8_with_gpu/runs/detect/train3/weights/best.pt')
-    # cap = cv2.VideoCapture(r'D:\Python_Projects\valo-ai\videos\VALORANT   2024-07-04 05-27-48.mp4')
+    model = YOLO(r'train_yolov8_with_gpu/runs/detect/train4/weights/best.pt')
     center = np.array([0.5, 0.5])
-    t1 = datetime.now()
-    t2 = datetime.now()
-    time = 0.05
-    x, y, w, h = 0.5, 0.5, 0.7, 0.6
-    x1_ = int((x - w / 2) * 1920)
-    y1_ = int((y - h / 2) * 1080)
-    x2_ = int((x + w / 2) * 1920)
-    y2_ = int((y + h / 2) * 1080)
+    focus_xywh = np.array([0.5, 0.5, 0.7, 0.6])
+    WH_ = np.array([1920, 1080])
 
+    focus_xy = np.array(focus_xywh[:2])
+    focus_wh = np.array(focus_xywh[2:])
+
+    xy1_ = (focus_xy - focus_wh / 2) * WH_
+    xy2_ = (focus_xy + focus_wh / 2) * WH_
+    xyxy_ = np.concatenate((xy1_, xy2_))
+    xyxy_int_tuple = tuple(map(int, xyxy_))
+
+    with mss.mss() as sct:
+        screenshot = sct.grab(xyxy_int_tuple)
+        WH_ = np.array(screenshot.size)
+    print(WH_)  # [1344  648]
+    center_ = center * WH_
+
+    enable = False
     while data['play']:
-        # t2 = datetime.now()
-        # delta_t = (t2 - t1).total_seconds()
-        if True:
-            # t1 = t2
+        if enable:
             print()
             print()
-            # print(delta_t)
             with mss.mss() as sct:
-                screenshot = sct.grab((x1_, y1_, x2_, y2_), )
+                screenshot = sct.grab(xyxy_int_tuple)
             image = np.array(screenshot)
             image = cv2.cvtColor(image, cv2.COLOR_BGRA2BGR)
-            # image = cap.read()[1]
+
             results = model(image)
             cv2.rectangle(image, (0, 0), (600, 100), (255, 255, 255), -1)
 
             boxes = results[0].boxes
-            print(boxes.xywhn)  # tensor([[0.3384, 0.5006, 0.0160, 0.0301]], device='cuda:0')
+            print(boxes.xywhn)  # tensor([[0.0263, 0.2256, 0.0524, 0.1227]], device='cuda:0')
             boxes_xywh = boxes.xywhn.cpu().numpy()
-            boxes_xyxy_px = boxes.xyxy.cpu().numpy()
+
             conf = boxes.conf
             if conf.tolist():
-                print(boxes_xywh)  # [[    0.33843     0.50057    0.015984     0.03014]]
+                print(boxes_xywh)  # [[   0.026281      0.2256    0.052399     0.12273]]
                 distances = np.sqrt(((boxes_xywh[:, :2] - center) ** 2).sum(axis=1))
-                print('distances', distances)  # distances [    0.16157]
+                print('distances', distances)  # distances [    0.54745]
                 nearest_index = np.argmin(distances)
                 nearest_box_xywh = boxes_xywh[nearest_index]
-                nearest_box_xyxy_px = boxes_xyxy_px[nearest_index]
-                xywh = nearest_box_xywh
-                xyxy_px = nearest_box_xyxy_px
-                print(f'xywh = {xywh}')  # xywh = [    0.33843     0.50057    0.015984     0.03014]
-                x, y, w, h = xywh
-                x1_px, y1_px, x2_px, y2_px = [int(x) for x in xyxy_px]
 
-                distance = (x - center[0], y - center[1])
-                print('distance', distance)  # distance (-0.16157126426696777, 0.0005723237991333008)
-                distance = distance * np.array((x2_ - x1_, y2_ - y1_), )
-                print('distance', distance)  # distance [    -310.22     0.61798]
+                xy, wh = np.split(nearest_box_xywh, 2)
+                print(f'xy | wh = {xy} | {wh}')  # xy | wh = [   0.026281      0.2256] | [   0.052399     0.12273]
+                distance = xy - center
+                print('distance', distance)  # distance (-0.47371928952634335, -0.2744021415710449)
+                distance_ = distance * WH_
+                print('distance', distance_)  # distance [    -636.68     -177.81]
 
-                # px
                 ###########################################################
                 ### y = b arctan(ax)
                 a = 0.001306
                 b = 455
-                vx_px = int(3 * b * atan(a * distance[0]))
-                vy_px = int(3 * b * atan(a * distance[1]))
+                v_ = 3 * b * np.arctan(a * distance_)
+                v_ = v_.astype(int)
                 #########################################################
 
-                print('v', vx_px, vy_px)
-
-                w_h = w * 0.4 / 2
-                h_h = h / 2.8
-                # h_h = (h - h * 0.1) / 2
-                y -= h / 4
-
+                xy_head = xy - [0, wh[1] / 4]
+                wh_head = wh * [0.2, 0.35]
+                print(xy_head, wh_head)
                 s = ''
-                if x - w_h <= center[0] <= x + w_h and y - h_h <= center[1] <= y + h_h:
+                if np.all(xy_head - wh_head <= center) and np.all(center <= xy_head + wh_head):
                     s += '<c>'
                 else:
-                    s += f'<{"+" if vx_px >= 0 else "-"}{abs(vx_px):03}{"+" if vy_px >= 0 else "-"}{abs(vy_px):03}>'
-
-                data['control'] = s
-
-                cv2.rectangle(image, (x1_px, y1_px), (x2_px, y2_px), (0, 0, 255), 1)
-                cv2.rectangle(image, (int((x - w_h / 2) * (x2_ - x1_)), int((y - h_h / 2) * (y2_ - y1_))),
-                              (int((x + w_h / 2) * (x2_ - x1_)), int((y + h_h / 2) * (y2_ - y1_))), (0, 255, 0), 1)
-
-                cv2.putText(image, f'{s}', (10, 60), 1, 4, (255, 0, 0), 4)
+                    if last_ser_time+timedelta(milliseconds=60) <datetime.now():
+                        last_ser_time = datetime.now()
+                        s += f'<{"+" if v_[0] >= 0 else "-"}{abs(v_[0]):03}{"+" if v_[1] >= 0 else "-"}{abs(v_[1]):03}>'
+                print('s', s)
+                loop(ser, s)
+                xy_ = xy * WH_
+                xy1_ = (xy - wh / 2) * WH_
+                xy2_ = (xy + wh / 2) * WH_
+                xy1_head_ = (xy_head - wh_head / 2) * WH_
+                xy2_head_ = (xy_head + wh_head / 2) * WH_
+                cv2.rectangle(image, xy1_.astype(int), xy2_.astype(int), (0, 0, 255), 1)
+                cv2.rectangle(image, xy1_head_.astype(int), xy2_head_.astype(int), (0, 255, 0), 1)
+                cv2.line(image, xy_.astype(int), center_.astype(int), (200, 200, 0), 1)
+                cv2.putText(image, f'{s}', (10, 60), 1, 3, (255, 0, 0), 3)
                 os.makedirs('img_out', exist_ok=True)
-                cv2.imwrite(datetime.now().strftime('img_out/%H%M%S.png'), image)
+                cv2.imwrite(datetime.now().strftime('img_out/%y%m%d %H%M%S %f.png'), image)
 
-            cv2.imshow('img', cv2.resize(image, (0, 0), fx=.25, fy=.25))
+            # cv2.imshow('img', cv2.resize(image, (0, 0), fx=.5, fy=.5))
             # cv2.imshow('img', image)
-            key = cv2.waitKey(1)
-            if key == ord('q'):
-                data['play'] = False
+            # cv2.waitKey(1)
+
+        if data['last_key'] == 'f4':
+            data['play'] = False
+        if data['last_key'] == 'ctrl':
+            enable = True
+        if data['last_key'] == 'alt':
+            enable = False
+            cv2.destroyAllWindows()
+
+    cv2.destroyAllWindows()
+    ser.close()
+
+
+def on_key_press(event, data):
+    data['last_key'] = event.name
+
+
+def kb_listener(data):
+    keyboard.hook(lambda event: on_key_press(event, data))
+    keyboard.wait('f4')
 
 
 if __name__ == '__main__':
     manager = multiprocessing.Manager()
     data = manager.dict()
     data['play'] = True
-    data['control'] = []
+    data['last_key'] = ''
 
     predict_process = multiprocessing.Process(target=predict, args=(data,))
-    control_process = multiprocessing.Process(target=control, args=(data,))
+    keyboard_process = multiprocessing.Process(target=kb_listener, args=(data,))
 
     predict_process.start()
-    control_process.start()
+    keyboard_process.start()
 
     predict_process.join()
