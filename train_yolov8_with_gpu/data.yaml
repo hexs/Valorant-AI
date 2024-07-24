@@ -1,0 +1,6 @@
+names:
+  - i
+nc: 1
+
+train: D:\Python_Projects\valo-ai\train_yolov8_with_gpu\output_for_YOLO_crop\train\images
+val: D:\Python_Projects\valo-ai\train_yolov8_with_gpu\output_for_YOLO_crop\valid\images
