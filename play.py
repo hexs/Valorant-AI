@@ -151,11 +151,12 @@ def predict(data, play, m_right, k_ctrl):
             send_data = ''
 
             if np.all(xy_head - wh_head <= center) and np.all(center <= xy_head + wh_head):
-                if data['auto'] != 'off':
-                    if shoot_last_datetime + timedelta(milliseconds=shooting_last_timedelta) < datetime.now():
-                        shoot_last_datetime = datetime.now()
-                        move_last_datetime = datetime.now()
-                        send_data += '<c>'
+                if enable and index == 1:
+                    if data['auto'] != 'off':
+                        if shoot_last_datetime + timedelta(milliseconds=shooting_last_timedelta) < datetime.now():
+                            shoot_last_datetime = datetime.now()
+                            move_last_datetime = datetime.now()
+                            send_data += '<c>'
             else:
                 if enable and index == 1:
                     if move_last_datetime + timedelta(milliseconds=move_last_timedelta) < datetime.now():
@@ -196,7 +197,7 @@ def predict(data, play, m_right, k_ctrl):
             cv2.putText(image, f'{send_data}', (10, 60), 1, 3, (255, 0, 0), 3)
             cv2.putText(image, f'{conf:.1f}', xy_, 1, 1, color_head, 1)
             enable_ = data['auto'], m_right.value, k_ctrl.value
-            cv2.putText(image, f'{enable_, sv_ < 50, enable}', (90, 90), 1, 2, (255, 0, 0), 2)
+            cv2.putText(image, f'{enable_, sv_ < 50, enable}', (10, 50), 1, 2, (255, 0, 0), 2)
 
             if debug['imwrite']:
                 os.makedirs('img_output_for_monitor/img_output', exist_ok=True)
