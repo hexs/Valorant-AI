@@ -4,18 +4,10 @@ import cv2
 import numpy as np
 import multiprocessing
 import serial
+from train_keras.train_classification import classify_predict
 
-
-def classify_predict(model, img_bgr):
-    img_bgr = cv2.resize(img_bgr, (40, 40))
-    img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
-    images = np.expand_dims(img_rgb, axis=0)
-    predictions = model.predict_on_batch(images)
-    exp_x = [2.7 ** x for x in predictions[0]]
-    percent_score_list = [round(x * 100 / sum(exp_x)) for x in exp_x]
-    highest_score_index = np.argmax(predictions[0])  # 3
-    highest_score_percent = percent_score_list[highest_score_index]
-    return highest_score_index, highest_score_percent
+YOLO_model_path = r'train_yolov8_with_gpu/runs/detect/train4/weights/best.pt'
+keras_model_path = r'train_keras/model.h5'
 
 
 def setup():
@@ -60,9 +52,8 @@ def predict(data, play, m_right, k_ctrl):
     move_last_datetime = datetime.now()
     shoot_last_datetime = datetime.now()
 
-    model = YOLO(r'train_yolov8_with_gpu/runs/detect/train4/weights/best.pt')
-    # model = YOLO(r'train_yolov8_with_gpu/runs/detect/train4/weights/best.onnx')
-    classify_model = models.load_model(r'train_keras/model.h5')
+    model = YOLO(YOLO_model_path)
+    classify_model = models.load_model(keras_model_path)
     center = np.array([0.5, 0.5])
     focus_xywh = np.array([0.5, 0.5, 0.7, 0.6])
     WH_ = np.array([1920, 1080])
@@ -252,7 +243,7 @@ if __name__ == '__main__':
     data['setHW'] = ['<vel120>', '<delay000>']
     data['setSW'] = {
         'a': 0.001306,
-        'b': 550,  # 455
+        'b': 600,  # 455
         'move_last_timedelta': 30,
         'shooting_last_timedelta': 300,
         'distance_to_shooting': 600,

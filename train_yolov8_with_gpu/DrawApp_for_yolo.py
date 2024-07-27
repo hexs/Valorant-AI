@@ -1,4 +1,5 @@
 import json
+import logging
 import re
 import random
 import os
@@ -11,6 +12,8 @@ import DrawApp
 import pygame as pg
 import shutil
 from PIL import ImageEnhance, Image
+from ultralytics import YOLO
+from play import YOLO_model_path
 
 
 # remove File extension
@@ -153,6 +156,31 @@ def write_data_YOLO(self):
 
 
 class Manage(DrawApp.DrawApp):
+    def show_predict_rects_to_surface(self):
+        # yellow frame to surface
+        x, y, w, h = self.focus_xywh
+        W, H = self.scaled_img_surface.get_size()
+        x1, y1 = x - w / 2, y - h / 2
+        x1y1wh_ = x1 * W, y1 * H, w * W, h * H
+        pg.draw.rect(self.scaled_img_surface, (255, 255, 0), Rect(x1y1wh_), 3)
+
+        # show predict rects to surface
+        if self.predict_YOLO_button.text == 'start predict YOLO':
+            return
+        results = model(self.img_np)
+
+        boxes = results[0].boxes
+        conf = boxes.conf
+        if conf.tolist():
+            print(boxes.xywhn)  # tensor([[0.0263, 0.2256, 0.0524, 0.1227]], device='cuda:0')
+        boxes_xywh = boxes.xywhn.cpu().numpy()
+
+        for xywh in boxes_xywh:
+            x, y, w, h = xywh
+            x1y1wh = xywh - [w / 2, h / 2, 0, 0]
+            x1y1wh_ = x1y1wh * np.tile(self.img_size_vector, 2)
+            pg.draw.rect(self.scaled_img_surface, (200, 255, 0), Rect(x1y1wh_.tolist()), 1)
+
     def get_frame_from_frame_dict_time(self):
         frames = self.frame_dict_time.get(f'{self.current_frame_n}')
         if frames:
@@ -167,16 +195,13 @@ class Manage(DrawApp.DrawApp):
                                                   text='Save data for YOLO',
                                                   manager=self.manager,
                                                   anchors={'left_target': self.show_list_button})
+        if model:
+            self.predict_YOLO_button = UIButton(relative_rect=Rect((0, 0), (150, 30)),
+                                                text='start predict YOLO',
+                                                manager=self.manager,
+                                                anchors={'left_target': self.save_data_for_YOLO_button})
 
     def run(self):
-        # video_file_name = '2024-04-21 21-16-17.mp4'
-        # video_file_name = 'VALORANT   2024-07-06 18-04-12.mp4'
-        # video_file_name = 'VALORANT   2024-07-06 13-32-50.mp4'
-        # video_file_name = 'VALORANT   2024-07-07 02-40-24.mp4'
-        video_file_name = 'VALORANT   2024-07-07 06-30-22.mp4'
-        json_file_name = remove_extension(video_file_name, '.json')
-        video_file_path = os.path.join('videos_data', video_file_name)
-
         self.setup_video_file(video_file_path)
         self.frame_dict_time = self.load_frame_json('videos_data', json_file_name)
         self.get_frame_from_frame_dict_time()
@@ -184,7 +209,7 @@ class Manage(DrawApp.DrawApp):
         while self.is_running:
             time_delta = self.clock.tick(60) / 1000.0
             self.dp.fill((180, 180, 180))
-            self.get_np_form_video_file()
+            self.get_surface_form_video_file()
 
             events = pg.event.get()
 
@@ -201,6 +226,10 @@ class Manage(DrawApp.DrawApp):
                 # PRESSED add_button
                 if event.type == UI_BUTTON_PRESSED and event.ui_element == self.save_data_for_YOLO_button:
                     write_data_YOLO(self)
+
+                if event.type == UI_BUTTON_PRESSED and event.ui_element == self.predict_YOLO_button:
+                    self.predict_YOLO_button.set_text(
+                        'stop predict YOLO' if self.predict_YOLO_button.text == 'start predict YOLO' else 'start predict YOLO')
 
                 if event.type == UI_BUTTON_PRESSED and event.ui_element == self.add_button:
                     self.frame_dict_time[f'{self.current_frame_n}'] = self.frame_dict
@@ -223,7 +252,10 @@ class Manage(DrawApp.DrawApp):
                 # if event.type != 1024:
                 #     print(event)
 
+            self.show_predict_rects_to_surface()
             self.show_rects_to_surface(self.frame_dict)
+
+            self.blit_to_display()
             self.manager.update(time_delta)
             self.manager.draw_ui(self.dp)
 
@@ -231,5 +263,19 @@ class Manage(DrawApp.DrawApp):
 
 
 if __name__ == '__main__':
+    try:
+        logging.getLogger('ultralytics').setLevel(logging.ERROR)
+        model_path = os.path.relpath(YOLO_model_path, 'train_yolov8_with_gpu')
+        model = YOLO(model_path)
+    except:
+        model = None
+    # video_file_name = '2024-04-21 21-16-17.mp4'
+    # video_file_name = 'VALORANT   2024-07-06 18-04-12.mp4'
+    # video_file_name = 'VALORANT   2024-07-06 13-32-50.mp4'
+    # video_file_name = 'VALORANT   2024-07-07 02-40-24.mp4'
+    video_file_name = 'VALORANT   2024-07-07 06-30-22.mp4'
+    json_file_name = remove_extension(video_file_name, '.json')
+    video_file_path = os.path.join('videos_data', video_file_name)
+
     app = Manage()
     app.run()

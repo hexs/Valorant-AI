@@ -273,7 +273,12 @@ class DrawApp:
         self.drawing = False
         self.moving = False
         self.is_running = True
-        self.img_np = np.full((500, 500, 3), [0, 255, 0], dtype=np.uint8)
+
+        self.img_np = np.full((500, 800, 3), [0, 255, 0], dtype=np.uint8)
+        self.img_surface = pg.image.frombuffer(self.img_np.tobytes(), self.img_np.shape[1::-1], "BGR")
+        self.scaled_img_surface = pg.transform.scale(self.img_surface, (
+            int(self.img_surface.get_width() * self.scale_factor),
+            int(self.img_surface.get_height() * self.scale_factor)))
 
         self.can_drawing = True
         self.can_moving = True
@@ -566,40 +571,33 @@ class DrawApp:
         if _:
             self.img_np = img
 
-    def setup_video_file(self, path):
-        self.cap = cv2.VideoCapture(path)
-        self.max_frame_n = int(self.cap.get(cv2.CAP_PROP_FRAME_COUNT))
-
-    def get_np_form_video_file(self):
-        self.cap.set(cv2.CAP_PROP_POS_FRAMES, self.current_frame_n)
-        _, img = self.cap.read()
-        if _:
-            self.img_np = img
-        self.get_surface_form_np()
-
-    def get_np_form_url(self, url):
-        req = urllib.request.urlopen(url)
-        arr = np.asarray(bytearray(req.read()), dtype=np.uint8)
-        self.img_np = cv2.imdecode(arr, -1)
-
     def get_surface_form_np(self):
         self.img_surface = pg.image.frombuffer(self.img_np.tobytes(), self.img_np.shape[1::-1], "BGR")
         self.scaled_img_surface = pg.transform.scale(self.img_surface, (
             int(self.img_surface.get_width() * self.scale_factor),
             int(self.img_surface.get_height() * self.scale_factor)))
 
-        x, y, w, h = self.focus_xywh
-        W, H = self.scaled_img_surface.get_size()
-        x1, y1 = x - w / 2, y - h / 2
-        x1y1wh_ = x1 * W, y1 * H, w * W, h * H
-        pg.draw.rect(self.scaled_img_surface, (255, 255, 0), Rect(x1y1wh_), 3)
+    def get_surface_form_pil(self):
+        self.img_surface = ...
+        self.scaled_img_surface = pg.transform.scale(self.img_surface, (
+            int(self.img_surface.get_width() * self.scale_factor),
+            int(self.img_surface.get_height() * self.scale_factor)))
+
+    def setup_video_file(self, path):
+        self.cap = cv2.VideoCapture(path)
+        self.max_frame_n = int(self.cap.get(cv2.CAP_PROP_FRAME_COUNT))
 
     def get_surface_form_video_file(self):
-        self.get_np_form_video_file()
+        self.cap.set(cv2.CAP_PROP_POS_FRAMES, self.current_frame_n)
+        _, img = self.cap.read()
+        if _:
+            self.img_np = img
         self.get_surface_form_np()
 
     def get_surface_form_url(self, url):
-        self.get_np_form_url(url)
+        req = urllib.request.urlopen(url)
+        arr = np.asarray(bytearray(req.read()), dtype=np.uint8)
+        self.img_np = cv2.imdecode(arr, -1)
         self.get_surface_form_np()
 
     def handle_window_resize(self, event):
@@ -737,19 +735,19 @@ class DrawApp:
         xyxy = np.array([x1, y1, x2, y2])
         self.xywh = (xyxy + [x2, y2, -x1, -y1]) / [2, 2, 1, 1]
         x1y1wh = xyxy - [0, 0, x1, y1]
-        x1y1wh_px = x1y1wh * np.tile(self.img_size_vector, 2)
+        x1y1wh_ = x1y1wh * np.tile(self.img_size_vector, 2)
 
         self.t1.set_text(f': {round(self.clock.get_fps())}')
         self.t2.set_text(f': {pg.mouse.get_pos()}')
         self.t3.set_text(f': {round(self.scale_factor, 2)}')
         self.t4.set_text(f': {self.img_offset_vector.astype(int)}')
         self.t5.set_text(f': {self.img_size_vector}')
-        self.t6.set_text(f': {x1y1wh_px.astype(int)}')
+        self.t6.set_text(f': {x1y1wh_.astype(int)}')
         self.t7.set_text(f': {np.round(x1y1wh, 2)}')
 
         # drawing
-        pg.draw.rect(self.scaled_img_surface, (255, 255, 0), Rect((x1y1wh_px + [-1, -1, 2, 2]).tolist()), 3)
-        pg.draw.rect(self.scaled_img_surface, (0, 0, 255), Rect(x1y1wh_px.tolist()), 1)
+        pg.draw.rect(self.scaled_img_surface, (255, 255, 0), Rect((x1y1wh_ + [-1, -1, 2, 2]).tolist()), 3)
+        pg.draw.rect(self.scaled_img_surface, (0, 0, 255), Rect(x1y1wh_.tolist()), 1)
 
     def draw_at_mouse_position(self):
         pg.draw.line(self.dp, (0, 0, 0), (self.mouse_pos[0], 0),
@@ -764,16 +762,19 @@ class DrawApp:
 
     def show_rects_to_surface(self, frame_dict):
         for k, v in frame_dict.items():
-            _xywh = np.array(v.get('xywh'))
-            _x, _y, _w, _h = _xywh
-            _x1y1wh = _xywh - [_w / 2, _h / 2, 0, 0]
-            _x1y1wh_px = _x1y1wh * np.tile(self.img_size_vector, 2)
+            xywh = np.array(v.get('xywh'))
+            x, y, w, h = xywh
+            x1y1wh = xywh - [w / 2, h / 2, 0, 0]
+            x1y1wh_ = x1y1wh * np.tile(self.img_size_vector, 2)
 
-            pg.draw.rect(self.scaled_img_surface, (200, 255, 255), Rect((_x1y1wh_px + [-1, -1, 2, 2]).tolist()), 3)
-            pg.draw.rect(self.scaled_img_surface, (200, 255, 0), Rect(_x1y1wh_px.tolist()), 1)
+            pg.draw.rect(self.scaled_img_surface, (200, 255, 255), Rect((x1y1wh_ + [-1, -1, 2, 2]).tolist()), 3)
+            pg.draw.rect(self.scaled_img_surface, (200, 255, 0), Rect(x1y1wh_.tolist()), 1)
 
             font = pg.font.Font(None, 16)
-            put_text(self.scaled_img_surface, f"{k}", font, _x1y1wh_px[:2], (0, 0, 255), anchor='bottomleft')
+            put_text(self.scaled_img_surface, f"{k}", font, x1y1wh_[:2], (0, 0, 255), anchor='bottomleft')
+
+    def blit_to_display(self):
+        self.show_rects_to_surface(self.frame_dict)
 
         # scaled_img_surface to dp
         self.dp.blit(self.scaled_img_surface,
@@ -787,10 +788,10 @@ class DrawApp:
             self.dp.fill((180, 180, 180))
             # get image surface
             # self.get_surface_from_display_capture()
-            self.get_surface_from_file('image/img (1).jpg')
+            # self.get_surface_from_file('image/img (1).jpg')
             # self.get_surface()
             # self.get_np_form_url('http://192.168.225.137:2000/old-image')
-            # self.get_surface_form_np()
+            self.get_surface_form_np()
             events = pg.event.get()
             for event in events:
                 self.manager.process_events(event)
@@ -805,6 +806,7 @@ class DrawApp:
 
             self.update_panels(events)
             self.show_rects_to_surface(self.frame_dict)
+            self.blit_to_display()
             self.manager.update(time_delta)
             self.manager.draw_ui(self.dp)
 
@@ -813,5 +815,5 @@ class DrawApp:
 
 if __name__ == "__main__":
     ...
-    # app = DrawApp()
-    # app.run()
+    app = DrawApp()
+    app.run()
