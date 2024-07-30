@@ -513,7 +513,13 @@ class DrawApp:
                                                          'right': 'right',
                                                          }
                                                 )
-        self.panel3_label = UILabel(Rect(10, 0, 300, 30), '-', container=self.panel3)
+        self.panel3_label = UILabel(Rect(10, 5, 300, 20), '-', container=self.panel3)
+        self.rewind_button = UIButton(Rect(0, 5, 40, 20), '<', container=self.panel3,
+                                            anchors={'left_target': self.panel3_label})
+        self.status_button = UIButton(Rect(0, 5, 40, 20), '||', container=self.panel3,
+                                    anchors={'left_target': self.rewind_button})
+        self.fast_forward_button = UIButton(Rect(0, 5, 40, 20), '>', container=self.panel3,
+                                      anchors={'left_target': self.status_button})
 
     def panel3_update(self, events):
         for event in events:

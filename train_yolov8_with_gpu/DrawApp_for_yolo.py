@@ -9,6 +9,7 @@ from pygame import Rect
 from pygame_gui import UI_BUTTON_PRESSED
 from pygame_gui.elements import UIButton
 import DrawApp
+from DrawApp import random_text
 import pygame as pg
 import shutil
 from PIL import ImageEnhance, Image
@@ -166,7 +167,7 @@ class Manage(DrawApp.DrawApp):
 
         # show predict rects to surface
         if self.predict_YOLO_button.text == 'start predict YOLO':
-            return
+            return False, None
         results = model(self.img_np)
 
         boxes = results[0].boxes
@@ -180,6 +181,7 @@ class Manage(DrawApp.DrawApp):
             x1y1wh = xywh - [w / 2, h / 2, 0, 0]
             x1y1wh_ = x1y1wh * np.tile(self.img_size_vector, 2)
             pg.draw.rect(self.scaled_img_surface, (200, 255, 0), Rect(x1y1wh_.tolist()), 1)
+        return True if conf.tolist() else False, boxes_xywh
 
     def get_frame_from_frame_dict_time(self):
         frames = self.frame_dict_time.get(f'{self.current_frame_n}')
@@ -200,12 +202,18 @@ class Manage(DrawApp.DrawApp):
                                                 text='start predict YOLO',
                                                 manager=self.manager,
                                                 anchors={'left_target': self.save_data_for_YOLO_button})
+            self.auto_add_frame_button = UIButton(relative_rect=Rect((0, 0), (150, 30)),
+                                                  text='auto add frame',
+                                                  manager=self.manager,
+                                                  anchors={'left_target': self.predict_YOLO_button})
+            self.auto_add_frame_button.disable()
 
     def run(self):
         self.setup_video_file(video_file_path)
         self.frame_dict_time = self.load_frame_json('videos_data', json_file_name)
         self.get_frame_from_frame_dict_time()
-
+        have_boxes = False
+        boxes_xywh = []
         while self.is_running:
             time_delta = self.clock.tick(60) / 1000.0
             self.dp.fill((180, 180, 180))
@@ -223,36 +231,94 @@ class Manage(DrawApp.DrawApp):
                 if event.type == pg.QUIT:
                     self.is_running = False
 
-                # PRESSED add_button
-                if event.type == UI_BUTTON_PRESSED and event.ui_element == self.save_data_for_YOLO_button:
-                    write_data_YOLO(self)
+                if event.type == UI_BUTTON_PRESSED:
+                    if event.ui_element in [self.add_button, self.delete_button, self.auto_add_frame_button] \
+                            or event.type == 32867 and '#rect_list.panel_window.selection_list.#delete_button.' in event.ui_object_id:
+                        # update json_file_name
+                        self.frame_dict_time[f'{self.current_frame_n}'] = self.frame_dict
+                        self.write_frame_json(self.frame_dict_time, os.path.join('videos_data', json_file_name))
 
-                if event.type == UI_BUTTON_PRESSED and event.ui_element == self.predict_YOLO_button:
-                    self.predict_YOLO_button.set_text(
-                        'stop predict YOLO' if self.predict_YOLO_button.text == 'start predict YOLO' else 'start predict YOLO')
+                    if event.ui_element == self.save_data_for_YOLO_button:
+                        write_data_YOLO(self)
 
-                if event.type == UI_BUTTON_PRESSED and event.ui_element == self.add_button:
-                    self.frame_dict_time[f'{self.current_frame_n}'] = self.frame_dict
-                    self.write_frame_json(self.frame_dict_time, os.path.join('videos_data', json_file_name))
+                    if event.ui_element == self.predict_YOLO_button:
+                        self.predict_YOLO_button.set_text(
+                            'stop predict YOLO' if self.predict_YOLO_button.text == 'start predict YOLO' else 'start predict YOLO')
+
+                    if event.ui_element == self.auto_add_frame_button:
+                        if have_boxes:
+                            for xywh in boxes_xywh:
+                                name = self.name_entry.get_text() or random_text(skip_list=list(self.frame_dict.keys()))
+                                self.name_entry.set_text('')
+                                if not self.frame_dict.get(name):
+                                    self.frame_dict[name] = {}
+                                self.frame_dict[name]['xywh'] = xywh.tolist()
+                                self.set_item_list()
+
+                    if event.ui_element == self.fast_forward_button:
+                        self.status_button.set_text('||>')
+                    if event.ui_element == self.rewind_button:
+                        self.status_button.set_text('<||')
+                    if event.ui_element == self.status_button:
+                        self.status_button.set_text('||')
 
                 if event.type == 32876:  # slider update
                     if event.ui_object_id == 'panel.horizontal_slider':
                         self.get_frame_from_frame_dict_time()
 
                 if event.type == pg.KEYDOWN:
-                    if event.key == 1073741903:  # r
-                        self.current_frame_n += 1
-                    if event.key == 1073741904:  # l
-                        self.current_frame_n -= 1
+                    selection_name = self.rect_list.get_single_selection()
+                    if event.key in [pg.K_RIGHT, pg.K_LEFT, pg.K_DOWN, pg.K_UP] and selection_name:
+                        w_, h_ = 1920, 1080
+                        xywh = self.frame_dict_time[f'{self.current_frame_n}'][selection_name]['xywh']
+                        if event.key == pg.K_RIGHT:
+                            xywh[0] += 1 / w_
+                        if event.key == pg.K_LEFT:
+                            xywh[0] -= 1 / w_
+                        if event.key == pg.K_DOWN:
+                            xywh[1] += 1 / h_
+                        if event.key == pg.K_UP:
+                            xywh[1] -= 1 / h_
+                        self.frame_dict_time[f'{self.current_frame_n}'][selection_name]['xywh'] = xywh
+
                 if event.type == pg.TEXTINPUT:
-                    if event.text == '.':
-                        self.current_frame_n += 1
-                    if event.text == ',':
-                        self.current_frame_n -= 1
+                    if event.text in 'wasd':
+                        if event.text == 'a':
+                            self.current_frame_n -= 1
+                        if event.text == 'd':
+                            self.current_frame_n += 1
+                        if event.text == 's':
+                            self.current_frame_n -= 10
+                        if event.text == 'w':
+                            self.current_frame_n += 10
+
+                        if self.current_frame_n < 0:
+                            self.current_frame_n = 0
+                        if self.current_frame_n > self.max_frame_n:
+                            self.current_frame_n = self.max_frame_n
+                        self.panel3_slider.set_current_value(self.current_frame_n)
+
                 # if event.type != 1024:
                 #     print(event)
 
-            self.show_predict_rects_to_surface()
+            have_boxes, boxes_xywh = self.show_predict_rects_to_surface()
+            if have_boxes:
+                self.auto_add_frame_button.enable()
+
+                self.status_button.set_text('||')
+                # print(boxes_xywh)
+                for xywh in boxes_xywh:
+                    ...
+
+            else:
+                self.auto_add_frame_button.disable()
+                if self.status_button.text == '||>':
+                    self.current_frame_n += 1
+                    self.panel3_slider.set_current_value(self.current_frame_n)
+                if self.status_button.text == '<||':
+                    self.current_frame_n -= 1
+                    self.panel3_slider.set_current_value(self.current_frame_n)
+
             self.show_rects_to_surface(self.frame_dict)
 
             self.blit_to_display()
@@ -274,6 +340,7 @@ if __name__ == '__main__':
     # video_file_name = 'VALORANT   2024-07-06 13-32-50.mp4'
     # video_file_name = 'VALORANT   2024-07-07 02-40-24.mp4'
     video_file_name = 'VALORANT   2024-07-07 06-30-22.mp4'
+    video_file_name = 'VALORANT   2024-07-27 23-32-21.mp4'
     json_file_name = remove_extension(video_file_name, '.json')
     video_file_path = os.path.join('videos_data', video_file_name)
 
