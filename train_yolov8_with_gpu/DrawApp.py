@@ -496,7 +496,7 @@ class DrawApp:
             ...
 
     def panel3_setup(self):
-        self.panel3 = UIPanel(Rect(-3, -55 + 3, self.window_size.tolist()[0] + 6, 55), 1, self.manager,
+        self.panel3 = UIPanel(Rect(-3, -65 + 3, self.window_size.tolist()[0] + 6, 65), 1, self.manager,
                               anchors={'top': 'bottom',
                                        'left': 'left',
                                        'bottom': 'bottom',
@@ -513,12 +513,12 @@ class DrawApp:
                                                          'right': 'right',
                                                          }
                                                 )
-        self.panel3_label = UILabel(Rect(10, 5, 300, 20), '-', container=self.panel3)
-        self.rewind_button = UIButton(Rect(0, 5, 40, 20), '<', container=self.panel3,
+        self.panel3_label = UILabel(Rect(10, 5, 200, 25), '-', container=self.panel3)
+        self.rewind_button = UIButton(Rect(0, 5, 40, 25), '<', container=self.panel3,
                                             anchors={'left_target': self.panel3_label})
-        self.status_button = UIButton(Rect(0, 5, 40, 20), '||', container=self.panel3,
+        self.status_button = UIButton(Rect(0, 5, 40, 25), '||', container=self.panel3,
                                     anchors={'left_target': self.rewind_button})
-        self.fast_forward_button = UIButton(Rect(0, 5, 40, 20), '>', container=self.panel3,
+        self.fast_forward_button = UIButton(Rect(0, 5, 40, 25), '>', container=self.panel3,
                                       anchors={'left_target': self.status_button})
 
     def panel3_update(self, events):

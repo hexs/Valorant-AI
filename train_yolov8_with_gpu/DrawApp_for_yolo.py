@@ -193,18 +193,18 @@ class Manage(DrawApp.DrawApp):
 
     def setup_ui(self):
         super().setup_ui()
-        self.save_data_for_YOLO_button = UIButton(relative_rect=Rect((100, 0), (150, 30)),
+        self.save_data_for_YOLO_button = UIButton(relative_rect=Rect(10, 5, 150, 25),
                                                   text='Save data for YOLO',
-                                                  manager=self.manager,
-                                                  anchors={'left_target': self.show_list_button})
+                                                  container=self.panel3,
+                                                  anchors={'left_target': self.fast_forward_button})
         if model:
-            self.predict_YOLO_button = UIButton(relative_rect=Rect((0, 0), (150, 30)),
+            self.predict_YOLO_button = UIButton(relative_rect=Rect(0, 5, 150, 25),
                                                 text='start predict YOLO',
-                                                manager=self.manager,
+                                                container=self.panel3,
                                                 anchors={'left_target': self.save_data_for_YOLO_button})
-            self.auto_add_frame_button = UIButton(relative_rect=Rect((0, 0), (150, 30)),
+            self.auto_add_frame_button = UIButton(relative_rect=Rect(0, 5, 150, 25),
                                                   text='auto add frame',
-                                                  manager=self.manager,
+                                                  container=self.panel3,
                                                   anchors={'left_target': self.predict_YOLO_button})
             self.auto_add_frame_button.disable()
 
@@ -257,8 +257,10 @@ class Manage(DrawApp.DrawApp):
 
                     if event.ui_element == self.fast_forward_button:
                         self.status_button.set_text('||>')
+                        self.current_frame_n += 1
                     if event.ui_element == self.rewind_button:
                         self.status_button.set_text('<||')
+                        self.current_frame_n -= 1
                     if event.ui_element == self.status_button:
                         self.status_button.set_text('||')
 
