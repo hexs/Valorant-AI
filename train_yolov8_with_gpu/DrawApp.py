@@ -9,14 +9,15 @@ from PIL import ImageGrab, Image
 from typing import Union, Dict, Tuple, List, Optional, Any
 import pygame as pg
 from numpy import ndarray, dtype
-from pygame import Rect
-from pygame_gui import UIManager, UI_BUTTON_PRESSED
-from pygame_gui.elements import UITextEntryLine, UIWindow, UIImage, UILabel, UIButton, UIPanel, UIHorizontalSlider, \
-    UISelectionList, UIVerticalScrollBar
+from pygame import Rect, MOUSEBUTTONDOWN
+from pygame_gui import UIManager, UI_BUTTON_PRESSED, UI_WINDOW_CLOSE, UI_SELECTION_LIST_NEW_SELECTION
 from pygame_gui.core import UIElement, UIContainer
 from pygame_gui.core.ui_element import ObjectID
 from pygame_gui.core.gui_type_hints import RectLike
 from pygame_gui.core.interfaces import IContainerLikeInterface, IUIManagerInterface
+from pygame_gui.elements import UITextEntryLine, UIWindow, UILabel, UIButton, UIPanel, UIHorizontalSlider, \
+    UISelectionList, UIVerticalScrollBar
+from pygame_gui.windows import UIFileDialog
 
 
 def draw_dashed_line(surf, color, start_pos, end_pos, width=1, dash_length=5):
@@ -50,6 +51,46 @@ def put_text(surface, text, font, xy, color, color2=(255, 255, 255), anchor='cen
     text_rect = text_surface.get_rect()
     setattr(text_rect, anchor, xy)
     surface.blit(text_surface, text_rect)
+
+
+class RightClick:
+    def __init__(self, manager, window_size):
+        self.manager = manager
+        self.options_list = None
+        self.selection = None
+        self.window_size = window_size
+
+    def set_options_list(self, options_list):
+        self.options_list = options_list
+
+    def create_selection(self, mouse_pos):
+        selection_size = (200, 6 + 20 * len(self.options_list))
+        pos = np.minimum(mouse_pos, self.window_size - selection_size)
+        self.selection = UISelectionList(
+            Rect(pos, selection_size),
+            item_list=self.options_list,
+            manager=self.manager,
+        )
+
+    def kill(self):
+        if self.selection:
+            self.selection.kill()
+            self.selection = None
+
+    def events(self, events, can_wheel=False):
+        for event in events:
+            if event.type == UI_SELECTION_LIST_NEW_SELECTION:
+                print(f"Clicked: {event.text}")
+                self.kill()
+
+            if event.type == MOUSEBUTTONDOWN:
+                if event.button == 1:  # Left mouse button
+                    if self.selection and not self.selection.get_relative_rect().collidepoint(event.pos):
+                        self.kill()
+                elif event.button == 3:  # Right mouse button
+                    self.kill()
+                    if len(self.options_list) > 0 and can_wheel:
+                        self.create_selection(event.pos)
 
 
 class UISelectionListWithDelete(UISelectionList):
@@ -140,10 +181,8 @@ class UISelectionListWithDelete(UISelectionList):
                 self.scroll_bar.set_visible_percentage(percentage_visible)
                 self.scroll_bar.start_percentage = 0
             else:
-                self.scroll_bar = UIVerticalScrollBar(Rect(-self.scroll_bar_width,
-                                                           0,
-                                                           self.scroll_bar_width,
-                                                           inner_visible_area_height),
+                self.scroll_bar = UIVerticalScrollBar(Rect(-self.scroll_bar_width, 0,
+                                                           self.scroll_bar_width, inner_visible_area_height),
                                                       visible_percentage=percentage_visible,
                                                       manager=self.ui_manager,
                                                       parent_element=self,
@@ -190,8 +229,7 @@ class UISelectionListWithDelete(UISelectionList):
         for item in self.item_list:
             if item_y_height <= self.item_list_container.relative_rect.height:
                 button_rect = Rect(0, item_y_height,
-                                   self.item_list_container.relative_rect.width - 20,
-                                   self.list_item_height)
+                                   self.item_list_container.relative_rect.width - 20, self.list_item_height)
                 item['button_element'] = UIButton(relative_rect=button_rect,
                                                   text=item['text'],
                                                   manager=self.ui_manager,
@@ -251,17 +289,10 @@ class DrawApp:
 
         self.dp = pg.display.set_mode(self.window_size.tolist(), pg.RESIZABLE)
         self.manager = UIManager(self.dp.get_size(), theme_path=self.setup_theme())
-        self.frame_dict = self.load_frame_json()
+        self.frame_dict = self.load_frame_json('frame_dict.json')
         self.frame_dict_time = {}
         self.setup_ui()
         self.set_item_list()
-        self.not_wheel_list = [
-            self.panel0,
-            self.panel1,
-            self.panel3,
-            self.show_list_button,
-            self.show_details_button
-        ]
 
         self.scale_factor = 1.0
         self.img_offset_vector = np.array([100, 0])
@@ -284,11 +315,10 @@ class DrawApp:
         self.can_moving = True
         self.can_zoom = True
 
-    def load_frame_json(self, path='', json_file_name='frame_dict.json'):
-        file_path = os.path.join(path, json_file_name)
-        if not os.path.exists(file_path):
-            self.write_frame_json({}, file_path)
-        with open(file_path) as f:
+    def load_frame_json(self, json_file_path):
+        if not os.path.exists(json_file_path):
+            self.write_frame_json({}, json_file_path)
+        with open(json_file_path) as f:
             return json.load(f)
 
     def write_frame_json(self, frame_dict, json_path='frame_dict.json'):
@@ -300,11 +330,6 @@ class DrawApp:
             '#close_button': {
                 "colours": {
                     "hovered_bg": "rgb(232,17,35)",
-                }
-            },
-            '@panel_window.#title_bar': {
-                "colours": {
-                    "normal_bg": "rgb(229,243,255)",
                 }
             },
             "button": {
@@ -323,12 +348,7 @@ class DrawApp:
                     "hovered_border": "#A6A6A6",
                     "disabled_border": "#CCCCCC",
                     "selected_border": "#A6A6A6",
-                    "active_border": "#0078D7",
-                    "normal_text_shadow": "#00000000",
-                    "hovered_text_shadow": "#00000000",
-                    "disabled_text_shadow": "#00000000",
-                    "selected_text_shadow": "#00000000",
-                    "active_text_shadow": "#00000000"
+                    "active_border": "#0078D7"
                 },
                 "misc": {
                     "shape": "rounded_rectangle",
@@ -363,13 +383,10 @@ class DrawApp:
                 },
 
                 "misc": {
-                    "shape": "rounded_rectangle",
-                    #         "shape_corner_radius": "10",
-                    #         "border_width": "1",
-                    #         "shadow_width": "15",
-                    #         "title_bar_height": "20"
+                    "shape": "rounded_rectangle"
                 }
             },
+
             "panel": {
                 "colours": {
                     "dark_bg": "#F9F9F9",
@@ -515,11 +532,11 @@ class DrawApp:
                                                 )
         self.panel3_label = UILabel(Rect(10, 5, 200, 25), '-', container=self.panel3)
         self.rewind_button = UIButton(Rect(0, 5, 40, 25), '<', container=self.panel3,
-                                            anchors={'left_target': self.panel3_label})
+                                      anchors={'left_target': self.panel3_label})
         self.status_button = UIButton(Rect(0, 5, 40, 25), '||', container=self.panel3,
-                                    anchors={'left_target': self.rewind_button})
+                                      anchors={'left_target': self.rewind_button})
         self.fast_forward_button = UIButton(Rect(0, 5, 40, 25), '>', container=self.panel3,
-                                      anchors={'left_target': self.status_button})
+                                            anchors={'left_target': self.status_button})
 
     def panel3_update(self, events):
         for event in events:
@@ -545,6 +562,15 @@ class DrawApp:
                                          anchors={'left_target': self.show_details_button})
         self.show_list_button.disable()
         # panel2 Manual
+
+        self.load_button = UIButton(relative_rect=Rect(10, 0, 100, 30),
+                                    text='Load Image',
+                                    manager=self.manager,
+                                    anchors={'left_target': self.show_list_button})
+
+        self.file_dialog = None
+        self.right_click = RightClick(self.manager, self.window_size)
+        self.right_click.set_options_list(["add", "-"])
 
     def set_item_list(self):
         self.rect_list.set_item_list(zip(self.frame_dict.keys(), self.frame_dict.keys()))
@@ -609,29 +635,32 @@ class DrawApp:
     def handle_window_resize(self, event):
         minimum = (500, 500)
         if event.type == pg.VIDEORESIZE:
-            x, y = event.size
             # ความกว้างของ window dp ใน computer dp _px
-            self.window_size = np.array([
-                max(x, minimum[0]),
-                max(y, minimum[1])
-            ])
+            self.window_size = np.maximum(event.size, minimum)
             self.dp = pg.display.set_mode(self.window_size.tolist(), pg.RESIZABLE)
             self.manager.set_window_resolution(self.window_size.tolist())
 
     def get_can_wheel(self):
-        return not any([obj.rect.collidepoint(self.mouse_pos) for obj in self.not_wheel_list])
+        self.not_wheel_list = [
+            self.panel0,
+            self.panel1,
+            self.panel3,
+            self.show_list_button,
+            self.show_details_button,
+            self.load_button,
+            self.file_dialog,
+            self.right_click.selection,
+
+        ]
+        return not any([obj.rect.collidepoint(self.mouse_pos) for obj in self.not_wheel_list if obj])
 
     def wheel_drawing_moving(self, event):
-        # mouse pos เทียบกับซ้ายบน  _px
-        self.mouse_pos = np.array(pg.mouse.get_pos())
         # canter of img pos เทียบกับซ้ายบน  _px
         self.canter_img_pos = self.window_size / 2 + self.img_offset_vector
         # ความกว้างของ img ใน window dp _px
         self.img_size_vector = np.array(self.scaled_img_surface.get_size())
         # left of img pos เทียบกับซ้ายบน  _px
         self.left_img_pos = self.canter_img_pos - self.img_size_vector / 2
-
-        self.can_wheel = self.get_can_wheel()
 
         if self.can_wheel:
             # drawing
@@ -688,6 +717,21 @@ class DrawApp:
         self.panel3_update(events)
 
         for event in events:
+            if (event.type == UI_BUTTON_PRESSED and
+                    event.ui_element == self.load_button):
+                self.file_dialog = UIFileDialog(Rect(200, 50, 440, 500),
+                                                self.manager,
+                                                window_title='Load Image...',
+                                                initial_file_path='videos_data',
+                                                allow_picking_directories=True,
+                                                allow_existing_files_only=True,
+                                                allowed_suffixes={".mp4", ".avi"})
+                self.load_button.disable()
+            if (event.type == UI_WINDOW_CLOSE
+                    and event.ui_element == self.file_dialog):
+                self.load_button.enable()
+                self.file_dialog = None
+
             # enable or disable
             if event.type == 32867:
                 if event.ui_object_id == '#details.panel_window.#close_button':
@@ -701,7 +745,9 @@ class DrawApp:
                     self.show_list_button.disable()
 
             # add item in frame_dict
-            if event.type == UI_BUTTON_PRESSED and event.ui_element == self.add_button:
+            if event.type == UI_BUTTON_PRESSED and event.ui_element == self.add_button or \
+                    event.type == UI_SELECTION_LIST_NEW_SELECTION and event.text == 'add':
+
                 name = self.name_entry.get_text() or random_text(skip_list=list(self.frame_dict.keys()))
                 self.name_entry.set_text('')
                 if not self.frame_dict.get(name):
@@ -732,15 +778,11 @@ class DrawApp:
                     self.panel1.set_position((-300, 0))
                 if event.ui_object_id == '#manual.panel_window.#close_button':
                     self.panel2.set_position((-300, 0))
-
-        x1 = max(min(self.start_point[0], self.stop_point[0], 1), 0)
-        y1 = max(min(self.start_point[1], self.stop_point[1], 1), 0)
-        x2 = min(max(self.start_point[0], self.stop_point[0], 0), 1)
-        y2 = min(max(self.start_point[1], self.stop_point[1], 0), 1)
-
-        xyxy = np.array([x1, y1, x2, y2])
-        self.xywh = (xyxy + [x2, y2, -x1, -y1]) / [2, 2, 1, 1]
-        x1y1wh = xyxy - [0, 0, x1, y1]
+        x1y1 = np.clip(np.minimum(self.start_point, self.stop_point), 0, 1)
+        x2y2 = np.clip(np.maximum(self.start_point, self.stop_point), 0, 1)
+        xyxy = np.concatenate((x1y1, x2y2))
+        self.xywh = np.concatenate(((x1y1 + x2y2) / 2, x2y2 - x1y1))
+        x1y1wh = np.concatenate((x1y1, x2y2 - x1y1))
         x1y1wh_ = x1y1wh * np.tile(self.img_size_vector, 2)
 
         self.t1.set_text(f': {round(self.clock.get_fps())}')
@@ -769,15 +811,21 @@ class DrawApp:
     def show_rects_to_surface(self, frame_dict):
         for k, v in frame_dict.items():
             xywh = np.array(v.get('xywh'))
-            x, y, w, h = xywh
-            x1y1wh = xywh - [w / 2, h / 2, 0, 0]
+            x1y1wh = xywh - np.array([xywh[2], xywh[3], 0, 0]) / 2
             x1y1wh_ = x1y1wh * np.tile(self.img_size_vector, 2)
+            rect = Rect(x1y1wh_.astype(int).tolist())
+            pg.draw.line(self.scaled_img_surface, (200, 255, 0), rect.midtop, rect.midbottom)
+            pg.draw.line(self.scaled_img_surface, (200, 255, 0), rect.midleft, rect.midright)
+            pg.draw.rect(self.scaled_img_surface, (200, 255, 255), rect.inflate(5, 5), 2)
 
-            pg.draw.rect(self.scaled_img_surface, (200, 255, 255), Rect((x1y1wh_ + [-1, -1, 2, 2]).tolist()), 3)
-            pg.draw.rect(self.scaled_img_surface, (200, 255, 0), Rect(x1y1wh_.tolist()), 1)
+            # pg.draw.rect(self.scaled_img_surface, (200, 255, 0), rect, 1)
+            pg.draw.line(self.scaled_img_surface, (0, 0, 100), rect.topleft, rect.topright)
+            pg.draw.line(self.scaled_img_surface, (0, 0, 100), rect.bottomleft, rect.bottomright)
+            pg.draw.line(self.scaled_img_surface, (0, 0, 100), rect.topleft, rect.bottomleft)
+            pg.draw.line(self.scaled_img_surface, (0, 0, 100), rect.topright, rect.bottomright)
 
             font = pg.font.Font(None, 16)
-            put_text(self.scaled_img_surface, f"{k}", font, x1y1wh_[:2], (0, 0, 255), anchor='bottomleft')
+            put_text(self.scaled_img_surface, f"{k}", font, rect.topleft, (0, 0, 255), anchor='bottomleft')
 
     def blit_to_display(self):
         self.show_rects_to_surface(self.frame_dict)
@@ -790,15 +838,20 @@ class DrawApp:
 
     def run(self):
         while self.is_running:
-            time_delta = self.clock.tick(60) / 1000.0
+            self.time_delta = self.clock.tick(60) / 1000.0
             self.dp.fill((180, 180, 180))
+            self.mouse_pos = np.array(pg.mouse.get_pos())
+            self.can_wheel = self.get_can_wheel()
+            events = pg.event.get()
+            self.right_click.events(events, self.can_wheel)
+
             # get image surface
             # self.get_surface_from_display_capture()
             # self.get_surface_from_file('image/img (1).jpg')
             # self.get_surface()
             # self.get_np_form_url('http://192.168.225.137:2000/old-image')
             self.get_surface_form_np()
-            events = pg.event.get()
+
             for event in events:
                 self.manager.process_events(event)
                 self.handle_window_resize(event)
@@ -806,14 +859,11 @@ class DrawApp:
 
                 if event.type == pg.QUIT:
                     self.is_running = False
-                if event.type != pg.MOUSEMOTION:
-                    # if event.type == UI_BUTTON_PRESSED:
-                    print(event)
 
             self.update_panels(events)
             self.show_rects_to_surface(self.frame_dict)
             self.blit_to_display()
-            self.manager.update(time_delta)
+            self.manager.update(self.time_delta)
             self.manager.draw_ui(self.dp)
 
             pg.display.update()

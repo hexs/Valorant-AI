@@ -6,7 +6,7 @@ import os
 import cv2
 import numpy as np
 from pygame import Rect
-from pygame_gui import UI_BUTTON_PRESSED
+from pygame_gui import UI_BUTTON_PRESSED, UI_FILE_DIALOG_PATH_PICKED
 from pygame_gui.elements import UIButton
 import DrawApp
 from DrawApp import random_text
@@ -157,6 +157,12 @@ def write_data_YOLO(self):
 
 
 class Manage(DrawApp.DrawApp):
+    def __init__(self):
+        super().__init__()
+        self.video_file_path = None
+        # video_file_name = '240626-141535.avi'
+        # json_file_name = remove_extension(video_file_name, '.json')
+
     def show_predict_rects_to_surface(self):
         # yellow frame to surface
         x, y, w, h = self.focus_xywh
@@ -197,29 +203,39 @@ class Manage(DrawApp.DrawApp):
                                                   text='Save data for YOLO',
                                                   container=self.panel3,
                                                   anchors={'left_target': self.fast_forward_button})
-        if model:
-            self.predict_YOLO_button = UIButton(relative_rect=Rect(0, 5, 150, 25),
-                                                text='start predict YOLO',
-                                                container=self.panel3,
-                                                anchors={'left_target': self.save_data_for_YOLO_button})
-            self.auto_add_frame_button = UIButton(relative_rect=Rect(0, 5, 150, 25),
-                                                  text='auto add frame',
-                                                  container=self.panel3,
-                                                  anchors={'left_target': self.predict_YOLO_button})
-            self.auto_add_frame_button.disable()
+
+        self.predict_YOLO_button = UIButton(relative_rect=Rect(0, 5, 150, 25),
+                                            text='start predict YOLO',
+                                            container=self.panel3,
+                                            anchors={'left_target': self.save_data_for_YOLO_button})
+        self.auto_add_frame_button = UIButton(relative_rect=Rect(0, 5, 150, 25),
+                                              text='auto add frame',
+                                              container=self.panel3,
+                                              anchors={'left_target': self.predict_YOLO_button})
+        self.auto_add_frame_button.disable()
+
+        if model == None:
+            self.predict_YOLO_button.disable()
 
     def run(self):
-        self.setup_video_file(video_file_path)
-        self.frame_dict_time = self.load_frame_json('videos_data', json_file_name)
-        self.get_frame_from_frame_dict_time()
         have_boxes = False
         boxes_xywh = []
+        old_current_frame_n = 0
         while self.is_running:
-            time_delta = self.clock.tick(60) / 1000.0
+            self.time_delta = self.clock.tick(60) / 1000.0
             self.dp.fill((180, 180, 180))
-            self.get_surface_form_video_file()
-
+            self.mouse_pos = np.array(pg.mouse.get_pos())
+            self.can_wheel = self.get_can_wheel()
             events = pg.event.get()
+            self.right_click.events(events, self.can_wheel)
+
+            if self.video_file_path:
+                if old_current_frame_n != self.current_frame_n:
+                    old_current_frame_n = self.current_frame_n
+                    self.get_frame_from_frame_dict_time()
+                self.get_surface_form_video_file()
+            else:
+                self.get_surface_form_np()
 
             for event in events:
                 self.manager.process_events(event)
@@ -231,12 +247,18 @@ class Manage(DrawApp.DrawApp):
                 if event.type == pg.QUIT:
                     self.is_running = False
 
+                if event.type == UI_FILE_DIALOG_PATH_PICKED:
+                    self.video_file_path = event.text
+                    self.setup_video_file(self.video_file_path)
+                    self.json_file_path = remove_extension(self.video_file_path, '.json')
+                    self.frame_dict_time = self.load_frame_json(self.json_file_path)
+
                 if event.type == UI_BUTTON_PRESSED:
                     if event.ui_element in [self.add_button, self.delete_button, self.auto_add_frame_button] \
                             or event.type == 32867 and '#rect_list.panel_window.selection_list.#delete_button.' in event.ui_object_id:
                         # update json_file_name
                         self.frame_dict_time[f'{self.current_frame_n}'] = self.frame_dict
-                        self.write_frame_json(self.frame_dict_time, os.path.join('videos_data', json_file_name))
+                        self.write_frame_json(self.frame_dict_time, self.json_file_path)
 
                     if event.ui_element == self.save_data_for_YOLO_button:
                         write_data_YOLO(self)
@@ -264,24 +286,21 @@ class Manage(DrawApp.DrawApp):
                     if event.ui_element == self.status_button:
                         self.status_button.set_text('||')
 
-                if event.type == 32876:  # slider update
-                    if event.ui_object_id == 'panel.horizontal_slider':
-                        self.get_frame_from_frame_dict_time()
-
                 if event.type == pg.KEYDOWN:
                     selection_name = self.rect_list.get_single_selection()
                     if event.key in [pg.K_RIGHT, pg.K_LEFT, pg.K_DOWN, pg.K_UP] and selection_name:
                         w_, h_ = 1920, 1080
-                        xywh = self.frame_dict_time[f'{self.current_frame_n}'][selection_name]['xywh']
-                        if event.key == pg.K_RIGHT:
-                            xywh[0] += 1 / w_
-                        if event.key == pg.K_LEFT:
-                            xywh[0] -= 1 / w_
-                        if event.key == pg.K_DOWN:
-                            xywh[1] += 1 / h_
-                        if event.key == pg.K_UP:
-                            xywh[1] -= 1 / h_
-                        self.frame_dict_time[f'{self.current_frame_n}'][selection_name]['xywh'] = xywh
+                        index, value = {
+                            pg.K_RIGHT: (0, 1 / w_),
+                            pg.K_LEFT: (0, -1 / w_),
+                            pg.K_DOWN: (1, 1 / h_),
+                            pg.K_UP: (1, -1 / h_)
+                        }[event.key]
+                        if event.mod & pg.KMOD_SHIFT:
+                            value *= 10
+                        if event.mod & pg.KMOD_CTRL:
+                            index += 2
+                        self.frame_dict_time[f'{self.current_frame_n}'][selection_name]['xywh'][index] += value
 
                 if event.type == pg.TEXTINPUT:
                     if event.text in 'wasd':
@@ -302,8 +321,8 @@ class Manage(DrawApp.DrawApp):
 
                 # if event.type != 1024:
                 #     print(event)
-
-            have_boxes, boxes_xywh = self.show_predict_rects_to_surface()
+            if model:
+                have_boxes, boxes_xywh = self.show_predict_rects_to_surface()
             if have_boxes:
                 self.auto_add_frame_button.enable()
 
@@ -322,9 +341,8 @@ class Manage(DrawApp.DrawApp):
                     self.panel3_slider.set_current_value(self.current_frame_n)
 
             self.show_rects_to_surface(self.frame_dict)
-
             self.blit_to_display()
-            self.manager.update(time_delta)
+            self.manager.update(self.time_delta)
             self.manager.draw_ui(self.dp)
 
             pg.display.update()
@@ -336,15 +354,7 @@ if __name__ == '__main__':
         model_path = os.path.relpath(YOLO_model_path, 'train_yolov8_with_gpu')
         model = YOLO(model_path)
     except:
-        model = None
-    # video_file_name = '2024-04-21 21-16-17.mp4'
-    # video_file_name = 'VALORANT   2024-07-06 18-04-12.mp4'
-    # video_file_name = 'VALORANT   2024-07-06 13-32-50.mp4'
-    # video_file_name = 'VALORANT   2024-07-07 02-40-24.mp4'
-    video_file_name = 'VALORANT   2024-07-07 06-30-22.mp4'
-    video_file_name = 'VALORANT   2024-07-27 23-32-21.mp4'
-    json_file_name = remove_extension(video_file_name, '.json')
-    video_file_path = os.path.join('videos_data', video_file_name)
+        model = YOLO('yolov8m.pt')
 
     app = Manage()
     app.run()
