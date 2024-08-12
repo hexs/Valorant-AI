@@ -5,7 +5,7 @@ from ultralytics import YOLO
 
 def main():
     # model = YOLO(r'D:\Python_Projects\valo-ai\train_yolov8_with_gpu\runs\detect\train4\weights\last.pt')
-    model = YOLO('yolov8l.pt')
+    model = YOLO('yolov8m.pt')
     results = model.train(
         data='data.yaml',
         epochs=600,

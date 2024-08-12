@@ -298,7 +298,7 @@ class DrawApp:
         self.img_offset_vector = np.array([100, 0])
         self.start_point = self.stop_point = np.array([0, 0])
 
-        self.focus_xywh = 0.5, 0.5, 0.7, 0.6
+        self.focus_xywh = 0.5, 0.5, 0.6, 0.6
 
         self.c = False
         self.drawing = False

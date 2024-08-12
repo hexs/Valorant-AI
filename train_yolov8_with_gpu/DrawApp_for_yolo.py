@@ -252,6 +252,8 @@ class Manage(DrawApp.DrawApp):
                     self.setup_video_file(self.video_file_path)
                     self.json_file_path = remove_extension(self.video_file_path, '.json')
                     self.frame_dict_time = self.load_frame_json(self.json_file_path)
+                    self.current_frame_n = 1
+                    self.get_frame_from_frame_dict_time()
 
                 if event.type == UI_BUTTON_PRESSED:
                     if event.ui_element in [self.add_button, self.delete_button, self.auto_add_frame_button] \
@@ -301,6 +303,10 @@ class Manage(DrawApp.DrawApp):
                         if event.mod & pg.KMOD_CTRL:
                             index += 2
                         self.frame_dict_time[f'{self.current_frame_n}'][selection_name]['xywh'][index] += value
+
+                        # update json_file_name
+                        self.frame_dict_time[f'{self.current_frame_n}'] = self.frame_dict
+                        self.write_frame_json(self.frame_dict_time, self.json_file_path)
 
                 if event.type == pg.TEXTINPUT:
                     if event.text in 'wasd':

@@ -12,8 +12,8 @@ from tensorflow.keras.models import Sequential
 data_dir = pathlib.Path('classification_image')
 
 batch_size = 32
-img_height = 40
-img_width = 40
+img_height = 64
+img_width = 64
 
 
 def classify_predict(model, img_bgr):
@@ -69,8 +69,12 @@ def train_classification():
         layers.Conv2D(64, 3, padding='same', activation='relu'),
         layers.BatchNormalization(),
         layers.MaxPooling2D(),
+        layers.Conv2D(128, 3, padding='same', activation='relu'),
+        layers.BatchNormalization(),
+        layers.MaxPooling2D(),
         layers.Dropout(0.2),
         layers.Flatten(),
+        layers.Dense(256, activation='relu'),
         layers.Dense(128, activation='relu'),
         layers.Dense(num_classes)
     ])
@@ -83,7 +87,7 @@ def train_classification():
 
     model.summary()
 
-    epochs = 130
+    epochs = 50
     history = model.fit(
         train_ds,
         validation_data=val_ds,
