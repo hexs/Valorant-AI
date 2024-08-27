@@ -1,105 +1,87 @@
 #include <Keyboard.h>
 #include <Mouse.h>
-#define BUF_SIZE 50
 
-int vel_ = 100;
-int delay_ = 0;
-char buff[BUF_SIZE + 1];  // +1 for null terminator
+#define BUFFER_SIZE 50
 
-//void buff_add(const char* string) {
-//  int string_len = strlen(string);
-//  int buff_len = strlen(buff);
-//
-//  if (string_len >= BUF_SIZE) {
-//    // If the new string is longer than or equal to the buffer size,
-//    // just copy the last BUF_SIZE characters
-//    strncpy(buff, string + (string_len - BUF_SIZE), BUF_SIZE);
-//  } else if (buff_len + string_len > BUF_SIZE) {
-//    // If adding the new string would exceed the buffer size,
-//    // shift the existing content and append the new string
-//    int shift = buff_len + string_len - BUF_SIZE;
-//    memmove(buff, buff + shift, buff_len - shift);
-//    strncpy(buff + (BUF_SIZE - string_len), string, string_len);
-//  } else {
-//    // If there's enough space, simply append the new string
-//    strcat(buff, string);
-//  }
-//
-//  buff[BUF_SIZE] = '\0';  // Ensure null termination
-//}
-void buff_add(const char* string) {
-  char cleaned[strlen(string) + 1];
+int velocity = 100;
+int delayTime = 0; // microsecond
+char buffer[BUFFER_SIZE + 1];  // +1 for null terminator
+
+void addToBuffer(const char* input) {
+  char cleanedInput[strlen(input) + 1];
   int j = 0;
 
   // Remove '\n' and '\r' characters
-  for (int i = 0; string[i] != '\0'; i++) {
-    if (string[i] != '\n' && string[i] != '\r') {
-      cleaned[j++] = string[i];
+  for (int i = 0; input[i] != '\0'; i++) {
+    if (input[i] != '\n' && input[i] != '\r') {
+      cleanedInput[j++] = input[i];
     }
   }
-  cleaned[j] = '\0';
+  cleanedInput[j] = '\0';
 
-  int cleaned_len = strlen(cleaned);
-  int buff_len = strlen(buff);
+  int cleanedLength = strlen(cleanedInput);
+  int bufferLength = strlen(buffer);
 
-  if (cleaned_len >= BUF_SIZE) {
+  if (cleanedLength >= BUFFER_SIZE) {
     // If the new string is longer than or equal to the buffer size,
-    // just copy the last BUF_SIZE characters
-    strncpy(buff, cleaned + (cleaned_len - BUF_SIZE), BUF_SIZE);
-  } else if (buff_len + cleaned_len > BUF_SIZE) {
+    // copy the last BUFFER_SIZE characters
+    strncpy(buffer, cleanedInput + (cleanedLength - BUFFER_SIZE), BUFFER_SIZE);
+  }
+  else if (bufferLength + cleanedLength > BUFFER_SIZE) {
     // If adding the new string would exceed the buffer size,
     // shift the existing content and append the new string
-    int shift = buff_len + cleaned_len - BUF_SIZE;
-    memmove(buff, buff + shift, buff_len - shift);
-    strncpy(buff + (BUF_SIZE - cleaned_len), cleaned, cleaned_len);
-  } else {
+    int shift = bufferLength + cleanedLength - BUFFER_SIZE;
+    memmove(buffer, buffer + shift, bufferLength - shift);
+    strncpy(buffer + (BUFFER_SIZE - cleanedLength), cleanedInput, cleanedLength);
+  }
+  else {
     // If there's enough space, simply append the new string
-    strcat(buff, cleaned);
+    strcat(buffer, cleanedInput);
   }
 
-  buff[BUF_SIZE] = '\0';  // Ensure null termination
+  buffer[BUFFER_SIZE] = '\0';  // Ensure null termination
 }
 
-char* check_command(const char* string) {
-  int len = strlen(string);
-  if (string[len - 1] != '>') {
+char* extractCommand(const char* input) {
+  int length = strlen(input);
+  if (input[length - 1] != '>') {
     return NULL;
   }
-  const char* start = strrchr(string, '<');
-  if (start != NULL && start < string + len - 1) {
-    int command_len = string + len - 1 - start - 1;
-    char* command = (char*)malloc(command_len + 1);
-    strncpy(command, start + 1, command_len);
-    command[command_len] = '\0';
+  const char* start = strrchr(input, '<');
+  if (start < input + length - 1) {
+    int commandLength = input + length - 1 - start - 1;
+    char* command = (char*)malloc(commandLength + 1);
+    strncpy(command, start + 1, commandLength);
+    command[commandLength] = '\0';
     return command;
   }
   return NULL;
 }
 
-void split_function(const char* command, char** result, int* result_size) {
+void splitCommand(const char* command, char** result, int* resultSize) {
   char temp[strlen(command) + 1];
   strcpy(temp, command);
 
-  *result_size = 0;
+  *resultSize = 0;
   char* token = strtok(temp, "(,)");
-  while (token != NULL && *result_size < 10) {  // Limit to 10 parts to avoid overflow
-    result[*result_size] = (char*)malloc(strlen(token) + 1);
-    strcpy(result[*result_size], token);
-    (*result_size)++;
+  while (token != NULL && *resultSize < 10) {  // Limit to 10 parts to avoid overflow
+    result[*resultSize] = (char*)malloc(strlen(token) + 1);
+    strcpy(result[*resultSize], token);
+    (*resultSize)++;
     token = strtok(NULL, "(,)");
   }
 }
 
-void move_mouse(int x, int y) {
+void moveMouse(int x, int y) {
   while (x != 0 || y != 0) {
-    int move_x = (x > vel_) ? vel_ : (x < -vel_) ? -vel_ : x;
-    int move_y = (y > vel_) ? vel_ : (y < -vel_) ? -vel_ : y;
+    int moveX = (x > velocity) ? velocity : (x < -velocity) ? -velocity : x;
+    int moveY = (y > velocity) ? velocity : (y < -velocity) ? -velocity : y;
 
-    Mouse.move(move_x, move_y);
-    x -= move_x;
-    y -= move_y;
+    Mouse.move(moveX, moveY);
+    x -= moveX;
+    y -= moveY;
 
-    delay(delay_);
+    delay(delayTime);
   }
 }
 
@@ -111,8 +93,8 @@ void setup() {
   delay(1000);
   Serial.println("+++");
   // Initialize buffer with dashes
-  memset(buff, '-', BUF_SIZE);
-  buff[BUF_SIZE] = '\0';
+  memset(buffer, '-', BUFFER_SIZE);
+  buffer[BUFFER_SIZE] = '\0';
 }
 
 void loop() {
@@ -120,37 +102,34 @@ void loop() {
     if (Serial.available()) {
       // Read new character from Serial
       char ch = Serial.read();
-      char str[2];
-      str[0] = ch;
-      str[1] = '\0';
-      buff_add(str);
-      //      Serial.println(buff);
-      if (ch == '>')
+      char str[2] = {ch, '\0'};
+      addToBuffer(str);
+      if (ch == '>') {
         break;
+      }
     }
   }
-  Serial.println("!!!!!!!!!!!!");
-  Serial.println(buff);
-  char* command = check_command(buff);
-  Serial.println(command);
+  char* command = extractCommand(buffer);
+  //Serial.println("!!!!!!!!!!!!");
+  //Serial.println(buffer);
+  //Serial.println(command);
 
-  char* split_result[10];  // Assuming max 10 parts
-  int split_size;
-  split_function(command, split_result, &split_size);
+  char* splitResult[10];  // Assuming max 10 parts
+  int splitSize;
+  splitCommand(command, splitResult, &splitSize);
 
-  //  Serial.print("Split result: ");
-  //  for (int i = 0; i < split_size; i++) {
-  //    Serial.print(split_result[i]);
-  //    if (i < split_size - 1) Serial.print(", ");
-  //  }
-  //  Serial.println();
-
-  if (strcmp(split_result[0], "move") == 0) {
-    int x = atoi(split_result[1]);
-    int y = atoi(split_result[2]);
+  if (strcmp(splitResult[0], "move") == 0) {
+    int x = atoi(splitResult[1]);
+    int y = atoi(splitResult[2]);
 
     // Move mouse by x, y coordinates
-    move_mouse(x, y);
+    moveMouse(x, y);
   }
-  Serial.println("############");
+
+
+  // Free allocated memory for splitResult
+  for (int i = 0; i < splitSize; i++) {
+    free(splitResult[i]);
+  }
+  free(command);  // Free the allocated memory for command
 }
