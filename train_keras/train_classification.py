@@ -8,6 +8,7 @@ import PIL
 import tensorflow as tf
 from keras import layers, models
 from tensorflow.keras.models import Sequential
+from hexss import json_update
 
 data_dir = pathlib.Path('classification_image')
 

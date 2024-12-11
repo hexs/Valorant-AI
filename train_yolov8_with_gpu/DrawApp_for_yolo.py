@@ -48,8 +48,10 @@ def get_text_label(frames, focus_xywh):
         xywh = v['xywh']
         xy_ori = np.array(xywh[:2])
         wh_ori = np.array(xywh[2:])
-        txt += f'{0} {xy_ori[0]} {xy_ori[1]} {wh_ori[0]} {wh_ori[1]}\n'
-
+        if name[0].isdigit():
+            txt += f'{name[0]} {xy_ori[0]} {xy_ori[1]} {wh_ori[0]} {wh_ori[1]}\n'
+        else:
+            txt += f'{0} {xy_ori[0]} {xy_ori[1]} {wh_ori[0]} {wh_ori[1]}\n'
         # กรอบแดง ori
         xy1_ori = xy_ori - wh_ori / 2
         xy1_ori_ = xy1_ori * WH_ori_
@@ -67,7 +69,11 @@ def get_text_label(frames, focus_xywh):
 
         xy_crop = (xy2_crop + xy1_crop) / 2
         wh_crop = xy2_crop - xy1_crop
-        txt_crop += f'{0} {xy_crop[0]} {xy_crop[1]} {wh_crop[0]} {wh_crop[1]}\n'
+
+        if name[0].isdigit():
+            txt_crop += f'{name[0]} {xy_crop[0]} {xy_crop[1]} {wh_crop[0]} {wh_crop[1]}\n'
+        else:
+            txt_crop += f'{0} {xy_crop[0]} {xy_crop[1]} {wh_crop[0]} {wh_crop[1]}\n'
 
     # while True:
     #     cv2.imshow('ori', cv2.resize(img, (0, 0), fx=0.6, fy=0.6))
@@ -173,7 +179,7 @@ class Manage(DrawApp.DrawApp):
 
         # show predict rects to surface
         if self.predict_YOLO_button.text == 'start predict YOLO':
-            return False, None
+            return False, None, None
         results = model(self.img_np)
 
         boxes = results[0].boxes
@@ -181,13 +187,14 @@ class Manage(DrawApp.DrawApp):
         if conf.tolist():
             print(boxes.xywhn)  # tensor([[0.0263, 0.2256, 0.0524, 0.1227]], device='cuda:0')
         boxes_xywh = boxes.xywhn.cpu().numpy()
+        boxes_cls = boxes.cls.cpu().numpy()
 
         for xywh in boxes_xywh:
             x, y, w, h = xywh
             x1y1wh = xywh - [w / 2, h / 2, 0, 0]
             x1y1wh_ = x1y1wh * np.tile(self.img_size_vector, 2)
             pg.draw.rect(self.scaled_img_surface, (200, 255, 0), Rect(x1y1wh_.tolist()), 1)
-        return True if conf.tolist() else False, boxes_xywh
+        return True if conf.tolist() else False, boxes_xywh, boxes_cls
 
     def get_frame_from_frame_dict_time(self):
         frames = self.frame_dict_time.get(f'{self.current_frame_n}')
@@ -220,6 +227,7 @@ class Manage(DrawApp.DrawApp):
     def run(self):
         have_boxes = False
         boxes_xywh = []
+        boxes_cls = []
         old_current_frame_n = 0
         while self.is_running:
             self.time_delta = self.clock.tick(60) / 1000.0
@@ -271,8 +279,8 @@ class Manage(DrawApp.DrawApp):
 
                     if event.ui_element == self.auto_add_frame_button:
                         if have_boxes:
-                            for xywh in boxes_xywh:
-                                name = self.name_entry.get_text() or random_text(skip_list=list(self.frame_dict.keys()))
+                            for xywh, cls in zip(boxes_xywh,boxes_cls):
+                                name = f'{int(cls)}{random_text(skip_list=list(self.frame_dict.keys()))}'
                                 self.name_entry.set_text('')
                                 if not self.frame_dict.get(name):
                                     self.frame_dict[name] = {}
@@ -328,7 +336,7 @@ class Manage(DrawApp.DrawApp):
                 # if event.type != 1024:
                 #     print(event)
             if model:
-                have_boxes, boxes_xywh = self.show_predict_rects_to_surface()
+                have_boxes, boxes_xywh ,boxes_cls = self.show_predict_rects_to_surface()
             if have_boxes:
                 self.auto_add_frame_button.enable()
 

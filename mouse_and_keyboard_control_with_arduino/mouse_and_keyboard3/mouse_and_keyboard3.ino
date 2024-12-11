@@ -3,8 +3,8 @@
 
 const int BUF_SIZE = 10;
 char buf[BUF_SIZE] = { '0', '1', '2', '3', '4', '5', '6', '7', '8', '9' };
-int vel_ = 100;
-int delay_ = 0;
+int vel_ = 10;
+int delay_ = 10;
 
 void move_mouse(int x, int y);
 void setup() {
@@ -89,6 +89,6 @@ void move_mouse(int x, int y) {
     x -= move_x;
     y -= move_y;
 
-    delay(delay_);
+    delayMicroseconds(delay_);
   }
 }
