@@ -14,7 +14,7 @@ import pygame as pg
 import shutil
 from PIL import ImageEnhance, Image
 from ultralytics import YOLO
-from play import YOLO_model_path
+from play import YOLO_MODEL_PATH
 
 
 # remove File extension
@@ -365,7 +365,7 @@ class Manage(DrawApp.DrawApp):
 if __name__ == '__main__':
     try:
         logging.getLogger('ultralytics').setLevel(logging.ERROR)
-        model_path = os.path.relpath(YOLO_model_path, 'train_yolov8_with_gpu')
+        model_path = os.path.relpath(YOLO_MODEL_PATH, 'train_yolov8_with_gpu')
         model = YOLO(model_path)
     except:
         model = YOLO('yolov8m.pt')

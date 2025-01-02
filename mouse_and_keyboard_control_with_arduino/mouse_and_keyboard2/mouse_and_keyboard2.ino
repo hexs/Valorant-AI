@@ -3,9 +3,65 @@
 
 #define BUFFER_SIZE 50
 
-int velocity = 100;
-int delayTime = 0; // microsecond
 char buffer[BUFFER_SIZE + 1];  // +1 for null terminator
+
+void setup() {
+  Serial.begin(9600);
+  Keyboard.begin();
+  Mouse.begin();
+
+  delay(1000);
+  Serial.println("+++");
+  // Initialize buffer with dashes
+  memset(buffer, '-', BUFFER_SIZE);
+  buffer[BUFFER_SIZE] = '\0';
+}
+
+void loop() {
+  while (1) {
+    if (Serial.available()) {
+      // Read new character from Serial
+      char ch = Serial.read();
+      char str[2] = {ch, '\0'};
+      addToBuffer(str);
+      if (ch == '>') {
+        break;
+      }
+    }
+  }
+  char* command = extractCommand(buffer);
+  //Serial.println("!!!!!!!!!!!!");
+  //Serial.println(buffer);
+  //Serial.println(command);
+
+  char* splitResult[10];  // Assuming max 10 parts
+  int splitSize;
+  splitCommand(command, splitResult, &splitSize);
+
+  if (strcmp(splitResult[0], "click") == 0) {
+    int ms = atoi(splitResult[1]);
+
+    clickMouse(ms);
+  }
+
+  if (strcmp(splitResult[0], "move") == 0) {
+    int x = atoi(splitResult[1]);
+    int y = atoi(splitResult[2]);
+    int velocity = atoi(splitResult[3]);
+    int delayTime = atoi(splitResult[4]); // microsecond
+
+    if (velocity > 127)
+      velocity = 127;
+
+    moveMouse(x, y, velocity, delayTime);
+  }
+
+  // Free allocated memory for splitResult
+  for (int i = 0; i < splitSize; i++) {
+    free(splitResult[i]);
+  }
+  free(command);  // Free the allocated memory for command
+}
 
 void addToBuffer(const char* input) {
   char cleanedInput[strlen(input) + 1];
@@ -72,7 +128,7 @@ void splitCommand(const char* command, char** result, int* resultSize) {
   }
 }
 
-void moveMouse(int x, int y) {
+void moveMouse(int x, int y, int velocity, int delayTime) {
   while (x != 0 || y != 0) {
     int moveX = (x > velocity) ? velocity : (x < -velocity) ? -velocity : x;
     int moveY = (y > velocity) ? velocity : (y < -velocity) ? -velocity : y;
@@ -81,55 +137,17 @@ void moveMouse(int x, int y) {
     x -= moveX;
     y -= moveY;
 
-    delay(delayTime);
+    delayMicroseconds(delayTime);
   }
 }
 
-void setup() {
-  Serial.begin(9600);
-  Keyboard.begin();
-  Mouse.begin();
-
-  delay(1000);
-  Serial.println("+++");
-  // Initialize buffer with dashes
-  memset(buffer, '-', BUFFER_SIZE);
-  buffer[BUFFER_SIZE] = '\0';
-}
-
-void loop() {
-  while (1) {
-    if (Serial.available()) {
-      // Read new character from Serial
-      char ch = Serial.read();
-      char str[2] = {ch, '\0'};
-      addToBuffer(str);
-      if (ch == '>') {
-        break;
-      }
-    }
+void clickMouse(int t) {
+  if (t == 0) {
+    Mouse.click();
   }
-  char* command = extractCommand(buffer);
-  //Serial.println("!!!!!!!!!!!!");
-  //Serial.println(buffer);
-  //Serial.println(command);
-
-  char* splitResult[10];  // Assuming max 10 parts
-  int splitSize;
-  splitCommand(command, splitResult, &splitSize);
-
-  if (strcmp(splitResult[0], "move") == 0) {
-    int x = atoi(splitResult[1]);
-    int y = atoi(splitResult[2]);
-
-    // Move mouse by x, y coordinates
-    moveMouse(x, y);
+  else {
+    Mouse.press();
+    delay(t);
+    Mouse.release();
   }
-
-
-  // Free allocated memory for splitResult
-  for (int i = 0; i < splitSize; i++) {
-    free(splitResult[i]);
-  }
-  free(command);  // Free the allocated memory for command
 }

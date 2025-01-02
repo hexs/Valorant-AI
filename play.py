@@ -20,14 +20,14 @@ def get_img(xyxy_int_tuple):
 
 
 def check_time(data, *args):
-    print(PINK, 'check_time', args, ENDC)
+    # print(PINK, 'check_time', args, ENDC)
     setup = data['setup']
     mode = data['mode']  # 1,2,3
     return all(setup[val][0] + timedelta(milliseconds=setup[val][1][mode]) < datetime.now() for val in args)
 
 
 def check_time_reset(data, *args):
-    print(CYAN, 'check_time_reset', args, ENDC)
+    # print(CYAN, 'check_time_reset', args, ENDC)
     for val in args:
         data['setup'][val][0] = datetime.now()
 
@@ -40,16 +40,21 @@ def load_models():
     return yolo_model, keras_model
 
 
-def setup_arduino():
-    port = 'COM3'
-    baud_rate = 921600
-    while True:
-        try:
-            ser = serial.Serial(port, baud_rate)
-            return ser
-        except:
-            print(f'{PINK}ERROR ser = serial.Serial({port}, {baud_rate}){ENDC}')
-            time.sleep(1)
+class Arduino:
+    def __init__(self):
+        while True:
+            try:
+                self.ser = serial.Serial('COM3', 921600)
+                break
+            except serial.SerialException as e:
+                print(f"Error: {e}")
+                print("Retrying in 1 second...")
+                time.sleep(1)
+
+    def send(self, s):
+        print(f'send_to_arduino: {s}')
+        self.ser.write(s.encode())
+        return s
 
 
 def p(show=False):
@@ -86,17 +91,11 @@ def run_server(data):
     app.run(host='0.0.0.0', port=5000, debug=False, use_reloader=False)
 
 
-def predict(data):
+def predict(data, arduino):
     from train_keras.train_classification import classify_predict
     import math
     import os
 
-    def send_to_arduino(s):
-        print(f'send_to_arduino: {s}')
-        ser.write(s.encode())
-        return s
-
-    ser = setup_arduino()
     yolo_model, classify_model = load_models()
 
     center = np.array([0.5, 0.5])
@@ -113,13 +112,16 @@ def predict(data):
 
     WH_ = get_img(xyxy_int_tuple).shape[1::-1]
     center_ = (center * WH_).astype(int)
+    sendlog = ''
 
     while data['play']:
         image = get_img(xyxy_int_tuple)
+        image_show = image.copy()
         results = yolo_model(image, verbose=False)
 
         boxes = results[0].boxes
         boxes_xywh = boxes.xywhn.cpu().numpy()
+        index, percent = '-', '0.00%'
 
         conf = boxes.conf
         if conf.tolist():
@@ -137,13 +139,7 @@ def predict(data):
             # print('distance', distance)  # distance (-0.47371928952634335, -0.2744021415710449)
             distance_ = distance * WH_
             # print('distance', distance_)  # distance [    -636.68     -177.81]
-
-            ###########################################################
-            ### y = b arctan(ax)
-            v_ = data['b'] * np.arctan(data['a'] * distance_)
-            v_ = v_.astype(int)
-            sv_ = math.sqrt(v_[0] ** 2 + v_[1] ** 2)
-            #########################################################
+            sv_ = math.sqrt(distance_[0] ** 2 + distance_[1] ** 2)
             min_wh_head = np.array([6, 8]) / WH_  # min_wh_head 6 8 px
 
             xy_head = xy - [0, wh[1] / 4]
@@ -164,55 +160,99 @@ def predict(data):
             if data['mode'] != 0 and index == 1 and sv_ < data['distance_to_shooting']:
                 if data['mode'] == 3 and data['m_right'] == False:
                     ...
-
+                    sendlog = "mode == 3 and m_right == False"
+                elif data['mode'] == 3 and any(data['move'].values()):
+                    ...
+                    sendlog = "mode == 3 and any(data['move'].values())"
                 elif np.all(xy_head - wh_head <= center) and np.all(center <= xy_head + wh_head):
-                    if check_time(data, 'shooting_to_shooting', 'right_click_to_shooting') and data['move'] == False:
+                    if check_time(data, 'shooting_to_shooting', 'right_click_to_shooting'):
                         check_time_reset(data, 'shooting_to_shooting', 'shooting_to_move')
-                        sendlog = send_to_arduino('<c>')
-
+                        if data['mode'] == 1:
+                            sendlog = arduino.send('<click,200>')
+                        else:
+                            sendlog = arduino.send('<click,10>')
                 else:
                     if check_time(data, 'move_to_move', 'shooting_to_move'):
                         check_time_reset(data, 'move_to_move')
-                        sendlog = send_to_arduino(
-                            f'<{"+" if v_[0] >= 0 else "-"}{abs(v_[0]):03}{"+" if v_[1] >= 0 else "-"}{abs(v_[1]):03}>')
+                        if datetime.now() - data['last_move_datetime'] < timedelta(milliseconds=200):  # fast move
+                            if data['move_before_shooting_n'] >= 0 and distance[0] > 0:
+                                data['move_before_shooting_n'] += 1
+                            elif data['move_before_shooting_n'] <= 0 and distance[0] < 0:
+                                data['move_before_shooting_n'] -= 1
+                            else:
+                                data['move_before_shooting_n'] = 0
+                        else:
+                            data['move_before_shooting_n'] = 0
+                        data['last_move_datetime'] = datetime.now()
 
-        cv2.rectangle(image, (0, 0), (600, 100), (255, 255, 255), -1)
-        cv2.putText(image, f"{p()}", (5, 30), 1, 2, (255, 0, 0), 2)
+                        if abs(data['move_before_shooting_n']) == 0:
+                            data['mul'] = np.array([1.10, 1])
+                        elif abs(data['move_before_shooting_n']) == 1:
+                            data['mul'] = np.array([1.20, 1])
+                        elif abs(data['move_before_shooting_n']) == 2:
+                            data['mul'] = np.array([1.30, 1])
+                        elif abs(data['move_before_shooting_n']) == 3:
+                            data['mul'] = np.array([1.40, 1])
+                        else:
+                            data['mul'] = np.array([1.50, 1])
+
+                        ###########################################################
+                        a = np.array([0.00133, 0.00133]) * data['mul']
+                        b = np.array([1620, 1620]) * data['mul']
+
+                        ### y = b arctan(ax)
+                        v_ = b * np.arctan(a * distance_)
+                        v_ = v_.astype(int)
+                        #########################################################
+                        print(f"mul = {data['mul']} {data['move_before_shooting_n']}")
+                        sendlog = arduino.send(f'<move,{v_[0]},{v_[1]},10,50>')
+
+        cv2.rectangle(image_show, (0, 0), (600, 100), (255, 255, 255), -1)
+        cv2.putText(image_show, f"{p()} move{any(data['move'].values())}", (5, 30),
+                    0, 1, (255, 0, 0), 1)
+        cv2.putText(image_show, f"mul {data['mul']} {data['move_before_shooting_n']}", (5, 60),
+                    0, 1, (255, 0, 0), 1)
+        cv2.putText(image_show, f"{sendlog}{index, percent}", (5, 90),
+                    0, 1, (255, 0, 0), 1)
+
         if conf.tolist():
-            cv2.rectangle(image, xy1_, xy2_, (0, 0, 255), 1)
-            cv2.line(image, xy_, center_, (200, 200, 0), 1)
+            cv2.rectangle(image_show, xy1_, xy2_, (0, 0, 255), 1)
+            cv2.rectangle(image_show, xy1_head_, xy2_head_, (0, 0, 255), 1)
+            cv2.line(image_show, xy_, center_, (200, 200, 0), 1)
 
-            cv2.putText(image, f'{conff:.1f}', xy_, 1, 1, color_head, 1)
+            cv2.putText(image_show, f'{conff:.1f}', xy_, 1, 1, color_head, 1)
             os.makedirs(f'train_keras/{index}', exist_ok=True)
             cv2.imwrite(f'train_keras/{index}/{datetime.now().strftime("%y%m%d %H%M%S %f.png")}', crop_image)
-            cv2.putText(image, f'{sendlog}', (5, 60), 1, 2, (255, 0, 0), 2)
-        os.makedirs('img_output_for_monitor/img_output', exist_ok=True)
-        cv2.imwrite(datetime.now().strftime('img_output_for_monitor/img_output/%y%m%d %H%M%S %f.png'), image)
 
-        if data['send_to_arduino']:
-            commands = data['send_to_arduino']
-            for command in commands:
-                send_to_arduino(command)
-                data['send_to_arduino'].remove(command)
+            os.makedirs('img_output_for_monitor/img_output', exist_ok=True)
+            cv2.imwrite(datetime.now().strftime('img_output_for_monitor/img_output/%y%m%d %H%M%S %f.png'), image_show)
 
-        data['img'] = image.copy()
-    ser.close()
+        if data['move']['up']:
+            arduino.send(f'<move,0,-50,5,50>')
+        if data['move']['down']:
+            arduino.send(f'<move,0,50,5,50>')
+        if data['move']['left']:
+            arduino.send(f'<move,-100,0,5,50>')
+        if data['move']['right']:
+            arduino.send(f'<move,100,0,5,50>')
+
+        data['img'] = image_show.copy()
 
 
-def input_listener(data):
+def input_listener(data, ser):
     from pynput import mouse
     import keyboard
 
     def on_scroll(x, y, dx, dy):
         if dx == -1:
             data['mode'] = 1
-            data['distance_to_shooting'] = 600
+            # data['distance_to_shooting'] = 400
         if dx == 1:
             data['mode'] = 2
-            data['distance_to_shooting'] = 600
+            # data['distance_to_shooting'] = 150
         if dy == 1:
             data['mode'] = 3
-            data['distance_to_shooting'] = 600
+            # data['distance_to_shooting'] = 150
         if dy == -1:
             data['mode'] = 0
 
@@ -221,46 +261,50 @@ def input_listener(data):
             if pressed:
                 data['m_right'] = True
                 check_time_reset(data, 'right_click_to_shooting')
-                data['b'] = np.array([6090 / 1.5, 6090 / 1.5])
             else:
                 data['m_right'] = False
-                data['b'] = np.array([1620, 1620])
 
     def on_key_press(event):
-        if event.name in ['w', 'a', 's', 'd']:
-            if event.event_type == 'down':
-                data['move'] = True
-            else:
-                data['move'] = False
+        for k in ['w', 'a', 's', 'd', 'up', 'down', 'left', 'right']:
+            if event.name == k:
+                if event.event_type == 'down':
+                    data['move'][k] = True
+                else:
+                    data['move'][k] = False
 
         if event.event_type == 'down':
+            if event.name == 'right ctrl':
+                data['mode'] = 0
+                arduino.send('<click,10>')
+            if event.name == 'right shift':
+                data['mode'] = 1
             if event.name == 'alt':
                 data['mode'] = 0
         else:
             if event.name == "l":
                 data['n'] = 0
             if event.name == "j":
-                data['send_to_arduino'].append(f'<-001-000>')
+                arduino.send(f'<move,-1,0,5,50>')
                 data['n'] -= 1
                 print('j', data['n'])
             if event.name == "k":
-                data['send_to_arduino'].append(f'<+001-000>')
+                arduino.send(f'<move,+1,0,5,50>')
                 data['n'] += 1
                 print('k', data['n'])
             if event.name == "u":
-                data['send_to_arduino'].append(f'<-010-000>')
+                arduino.send(f'<move,-10,0,5,50>')
                 data['n'] -= 10
                 print('j', data['n'])
             if event.name == "i":
-                data['send_to_arduino'].append(f'<+010-000>')
+                arduino.send(f'<move,10,0,5,50>')
                 data['n'] += 10
                 print('k', data['n'])
             if event.name == "7":
-                data['send_to_arduino'].append(f'<-100-000>')
+                arduino.send(f'<move,-100,0,5,50>')
                 data['n'] -= 100
                 print('j', data['n'])
             if event.name == "8":
-                data['send_to_arduino'].append(f'<+100-000>')
+                arduino.send(f'<move,100,0,5,50>')
                 data['n'] += 100
                 print('k', data['n'])
 
@@ -285,40 +329,46 @@ if __name__ == '__main__':
         'mode': 0,  # 0, 1AR, 2C, 3s
         'm_right': False,
 
-        'move': False,
+        'move': {
+            'w': False, 'a': False, 's': False, 'd': False,
+            'up': False, 'down': False, 'left': False, 'right': False
+        },
 
-        'distance_to_shooting': 400,
+        'distance_to_shooting': 200,
         'a': np.array([0.00133, 0.00133]),  # 0.00133
-        'br': np.array([6090, 6090]),  # 6090
         'b': np.array([1620, 1620]),  # 1620
+        'mul': np.array([1, 1]),
 
-        'send_to_arduino': ['<vel50>', '<delay005>'],
+        'move_before_shooting_n': 0,
+        'last_move_datetime': now,
+
         'setup': {
             'move_to_move': [now, {
-                1: 50,
-                2: 50,
-                3: 50
+                1: 100,
+                2: 100,
+                3: 100
             }],
             'shooting_to_move': [now, {
-                1: 50,
+                1: 150,
                 2: 500,
                 3: 700
             }],
             'shooting_to_shooting': [now, {
-                1: 150,
+                1: 300,
                 2: 500,
-                3: 800
+                3: 900
             }],
             'right_click_to_shooting': [now, {
                 1: 20,
                 2: 20,
-                3: 300,
+                3: 250,
             }]
         }
     }
+    arduino = Arduino()
 
-    m.add_func(predict, (data,))
-    m.add_func(input_listener, (data,))
+    m.add_func(predict, (data, arduino))
+    m.add_func(input_listener, (data, arduino))
     m.add_func(run_server, (data,), join=False)
 
     m.start()
